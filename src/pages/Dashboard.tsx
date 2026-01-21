@@ -16,6 +16,9 @@ import { SocialNetworkCard } from "@/components/dashboard/SocialNetworkCard";
 import { CalendarView } from "@/components/dashboard/CalendarView";
 import { StoriesLivesView } from "@/components/dashboard/StoriesLivesView";
 import { DocumentsView } from "@/components/dashboard/DocumentsView";
+import { SettingsView } from "@/components/dashboard/SettingsView";
+import { MediaGalleryView } from "@/components/dashboard/MediaGalleryView";
+import { NotificationsPanel } from "@/components/dashboard/NotificationsPanel";
 import { socialPlatforms, SocialPlatformId } from "@/components/icons/SocialIcons";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +27,7 @@ const Dashboard = () => {
   const [connectedPlatforms, setConnectedPlatforms] = useState<SocialPlatformId[]>([
     "facebook", "instagram", "linkedin"
   ]);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const toggleConnection = (id: SocialPlatformId) => {
     setConnectedPlatforms(prev =>
@@ -118,6 +122,20 @@ const Dashboard = () => {
 
       case "documents":
         return <DocumentsView />;
+
+      case "settings":
+        return <SettingsView />;
+
+      case "media":
+        return <MediaGalleryView />;
+
+      case "notifications":
+        return (
+          <div>
+            <h1 className="font-display font-bold text-3xl mb-2">Notificações</h1>
+            <p className="text-muted-foreground mb-6">Veja todas as suas notificações</p>
+          </div>
+        );
 
       default:
         return (
@@ -239,11 +257,12 @@ const Dashboard = () => {
     <div className="min-h-screen bg-background">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
       <div className="pl-64 transition-all duration-300">
-        <Header />
+        <Header onNotificationsClick={() => setShowNotifications(true)} />
         <main className="p-8">
           {renderContent()}
         </main>
       </div>
+      <NotificationsPanel isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
     </div>
   );
 };
