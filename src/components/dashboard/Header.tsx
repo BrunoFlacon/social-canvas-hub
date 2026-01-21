@@ -1,7 +1,16 @@
 import { motion } from "framer-motion";
 import { Bell, Search, User, ChevronDown } from "lucide-react";
+import { useNotifications } from "@/contexts/NotificationContext";
+import { useAuth } from "@/contexts/AuthContext";
 
-export const Header = () => {
+interface HeaderProps {
+  onNotificationsClick?: () => void;
+}
+
+export const Header = ({ onNotificationsClick }: HeaderProps) => {
+  const { unreadCount } = useNotifications();
+  const { user } = useAuth();
+
   return (
     <motion.header
       initial={{ opacity: 0, y: -20 }}
@@ -20,17 +29,22 @@ export const Header = () => {
       </div>
 
       <div className="flex items-center gap-3">
-        <button className="relative p-2.5 rounded-xl bg-muted/50 hover:bg-muted transition-colors">
+        <button 
+          onClick={onNotificationsClick}
+          className="relative p-2.5 rounded-xl bg-muted/50 hover:bg-muted transition-colors"
+        >
           <Bell className="w-5 h-5 text-muted-foreground" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full" />
+          {unreadCount > 0 && (
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full" />
+          )}
         </button>
 
         <div className="flex items-center gap-3 pl-3 border-l border-border">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-            <User className="w-5 h-5 text-primary-foreground" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-lg font-bold text-primary-foreground">
+            {user?.name?.charAt(0) || "U"}
           </div>
           <div className="hidden md:block">
-            <p className="text-sm font-medium">Admin</p>
+            <p className="text-sm font-medium">{user?.name || "Usuário"}</p>
             <p className="text-xs text-muted-foreground">Administrador</p>
           </div>
           <ChevronDown className="w-4 h-4 text-muted-foreground" />
