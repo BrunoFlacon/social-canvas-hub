@@ -29,13 +29,13 @@ interface ApiToken {
 }
 
 export const SettingsView = () => {
-  const { user, updateProfile } = useAuth();
+  const { user, profile, updateProfile } = useAuth();
   const { toast } = useToast();
   
   const [profileData, setProfileData] = useState({
-    name: user?.name || "",
+    name: profile?.name || user?.email?.split('@')[0] || "",
     email: user?.email || "",
-    bio: "",
+    bio: profile?.bio || "",
     website: ""
   });
 
@@ -136,7 +136,7 @@ export const SettingsView = () => {
                 <h4 className="font-medium mb-1">{profileData.name || "Usuário"}</h4>
                 <p className="text-sm text-muted-foreground">{profileData.email}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Membro desde {user?.createdAt ? new Date(user.createdAt).toLocaleDateString('pt-BR') : 'hoje'}
+                  Membro desde {user?.created_at ? new Date(user.created_at).toLocaleDateString('pt-BR') : 'hoje'}
                 </p>
               </div>
             </div>

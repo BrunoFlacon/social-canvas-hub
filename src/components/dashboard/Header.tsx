@@ -41,10 +41,10 @@ export const Header = ({ onNotificationsClick }: HeaderProps) => {
 
         <div className="flex items-center gap-3 pl-3 border-l border-border">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-lg font-bold text-primary-foreground">
-            {user?.name?.charAt(0) || "U"}
+            {user?.email?.charAt(0)?.toUpperCase() || "U"}
           </div>
           <div className="hidden md:block">
-            <p className="text-sm font-medium">{user?.name || "Usuário"}</p>
+            <p className="text-sm font-medium">{user?.email?.split('@')[0] || "Usuário"}</p>
             <p className="text-xs text-muted-foreground">Administrador</p>
           </div>
           <ChevronDown className="w-4 h-4 text-muted-foreground" />

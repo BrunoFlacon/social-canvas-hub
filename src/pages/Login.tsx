@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Share2, Mail, Lock, Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,21 +6,48 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { z } from "zod";
+
+const loginSchema = z.object({
+  email: z.string().email("Email inválido"),
+  password: z.string().min(6, "A senha deve ter pelo menos 6 caracteres"),
+});
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const { login, user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  useEffect(() => {
+    if (user) {
+      navigate("/dashboard");
+    }
+  }, [user, navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrors({});
+    
+    // Validate inputs
+    const result = loginSchema.safeParse({ email, password });
+    if (!result.success) {
+      const fieldErrors: { email?: string; password?: string } = {};
+      result.error.errors.forEach((err) => {
+        if (err.path[0] === 'email') fieldErrors.email = err.message;
+        if (err.path[0] === 'password') fieldErrors.password = err.message;
+      });
+      setErrors(fieldErrors);
+      return;
+    }
+
     setIsLoading(true);
 
-    const success = await login(email, password);
+    const { success, error } = await login(email, password);
     
     if (success) {
       toast({
@@ -31,7 +58,7 @@ const Login = () => {
     } else {
       toast({
         title: "Erro no login",
-        description: "Email ou senha incorretos.",
+        description: error || "Email ou senha incorretos.",
         variant: "destructive",
       });
     }
@@ -75,10 +102,11 @@ const Login = () => {
                   placeholder="seu@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 h-12 bg-muted/50 border-border"
+                  className={`pl-10 h-12 bg-muted/50 border-border ${errors.email ? 'border-destructive' : ''}`}
                   required
                 />
               </div>
+              {errors.email && <p className="text-xs text-destructive">{errors.email}</p>}
             </div>
 
             <div className="space-y-2">
@@ -90,7 +118,7 @@ const Login = () => {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 h-12 bg-muted/50 border-border"
+                  className={`pl-10 pr-10 h-12 bg-muted/50 border-border ${errors.password ? 'border-destructive' : ''}`}
                   required
                 />
                 <button
@@ -101,6 +129,7 @@ const Login = () => {
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+              {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
             </div>
 
             <div className="flex items-center justify-between">
@@ -138,16 +167,6 @@ const Login = () => {
             </p>
           </div>
         </div>
-
-        {/* Demo hint */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
-          className="mt-4 text-center text-sm text-muted-foreground"
-        >
-          <p>Demo: Crie uma conta para testar</p>
-        </motion.div>
       </motion.div>
     </div>
   );
