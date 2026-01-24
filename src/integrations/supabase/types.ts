@@ -14,7 +14,174 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      media: {
+        Row: {
+          created_at: string
+          duration: number | null
+          file_size: number | null
+          file_type: string
+          file_url: string
+          height: number | null
+          id: string
+          name: string
+          thumbnail_url: string | null
+          user_id: string
+          width: number | null
+        }
+        Insert: {
+          created_at?: string
+          duration?: number | null
+          file_size?: number | null
+          file_type: string
+          file_url: string
+          height?: number | null
+          id?: string
+          name: string
+          thumbnail_url?: string | null
+          user_id: string
+          width?: number | null
+        }
+        Update: {
+          created_at?: string
+          duration?: number | null
+          file_size?: number | null
+          file_type?: string
+          file_url?: string
+          height?: number | null
+          id?: string
+          name?: string
+          thumbnail_url?: string | null
+          user_id?: string
+          width?: number | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          created_at: string
+          email: string
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          created_at?: string
+          email: string
+          id?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      scheduled_posts: {
+        Row: {
+          content: string
+          created_at: string
+          error_message: string | null
+          id: string
+          media_ids: string[] | null
+          media_type: string
+          orientation: string | null
+          platforms: string[]
+          published_at: string | null
+          scheduled_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          media_ids?: string[] | null
+          media_type?: string
+          orientation?: string | null
+          platforms: string[]
+          published_at?: string | null
+          scheduled_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          media_ids?: string[] | null
+          media_type?: string
+          orientation?: string | null
+          platforms?: string[]
+          published_at?: string | null
+          scheduled_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      social_connections: {
+        Row: {
+          access_token: string | null
+          created_at: string
+          id: string
+          is_connected: boolean
+          page_id: string | null
+          page_name: string | null
+          platform: string
+          platform_user_id: string | null
+          refresh_token: string | null
+          token_expires_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token?: string | null
+          created_at?: string
+          id?: string
+          is_connected?: boolean
+          page_id?: string | null
+          page_name?: string | null
+          platform: string
+          platform_user_id?: string | null
+          refresh_token?: string | null
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string | null
+          created_at?: string
+          id?: string
+          is_connected?: boolean
+          page_id?: string | null
+          page_name?: string | null
+          platform?: string
+          platform_user_id?: string | null
+          refresh_token?: string | null
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

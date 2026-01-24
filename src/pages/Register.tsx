@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Share2, Mail, Lock, User, Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,24 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { z } from "zod";
+
+const registerSchema = z.object({
+  name: z.string()
+    .min(2, "Nome deve ter pelo menos 2 caracteres")
+    .max(100, "Nome muito longo")
+    .regex(/^[a-zA-ZÀ-ÿ\s'-]+$/, "Nome contém caracteres inválidos"),
+  email: z.string().email("Email inválido"),
+  password: z.string()
+    .min(8, "A senha deve ter pelo menos 8 caracteres")
+    .regex(/[A-Z]/, "A senha deve conter pelo menos uma letra maiúscula")
+    .regex(/[a-z]/, "A senha deve conter pelo menos uma letra minúscula")
+    .regex(/[0-9]/, "A senha deve conter pelo menos um número"),
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "As senhas não coincidem",
+  path: ["confirmPassword"],
+});
 
 const Register = () => {
   const [name, setName] = useState("");
@@ -14,34 +32,38 @@ const Register = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { register } = useAuth();
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const { register, user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  useEffect(() => {
+    if (user) {
+      navigate("/dashboard");
+    }
+  }, [user, navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrors({});
     
-    if (password !== confirmPassword) {
-      toast({
-        title: "Erro",
-        description: "As senhas não coincidem.",
-        variant: "destructive",
+    // Validate inputs
+    const result = registerSchema.safeParse({ name, email, password, confirmPassword });
+    if (!result.success) {
+      const fieldErrors: Record<string, string> = {};
+      result.error.errors.forEach((err) => {
+        const field = err.path[0] as string;
+        if (!fieldErrors[field]) {
+          fieldErrors[field] = err.message;
+        }
       });
-      return;
-    }
-
-    if (password.length < 6) {
-      toast({
-        title: "Erro",
-        description: "A senha deve ter pelo menos 6 caracteres.",
-        variant: "destructive",
-      });
+      setErrors(fieldErrors);
       return;
     }
 
     setIsLoading(true);
 
-    const success = await register(email, password, name);
+    const { success, error } = await register(email, password, name);
     
     if (success) {
       toast({
@@ -52,7 +74,7 @@ const Register = () => {
     } else {
       toast({
         title: "Erro no cadastro",
-        description: "Este email já está em uso.",
+        description: error || "Não foi possível criar a conta.",
         variant: "destructive",
       });
     }
@@ -96,10 +118,12 @@ const Register = () => {
                   placeholder="Seu nome"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="pl-10 h-12 bg-muted/50 border-border"
+                  className={`pl-10 h-12 bg-muted/50 border-border ${errors.name ? 'border-destructive' : ''}`}
                   required
+                  maxLength={100}
                 />
               </div>
+              {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
             </div>
 
             <div className="space-y-2">
@@ -111,10 +135,11 @@ const Register = () => {
                   placeholder="seu@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 h-12 bg-muted/50 border-border"
+                  className={`pl-10 h-12 bg-muted/50 border-border ${errors.email ? 'border-destructive' : ''}`}
                   required
                 />
               </div>
+              {errors.email && <p className="text-xs text-destructive">{errors.email}</p>}
             </div>
 
             <div className="space-y-2">
@@ -126,7 +151,7 @@ const Register = () => {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10 h-12 bg-muted/50 border-border"
+                  className={`pl-10 pr-10 h-12 bg-muted/50 border-border ${errors.password ? 'border-destructive' : ''}`}
                   required
                 />
                 <button
@@ -137,6 +162,10 @@ const Register = () => {
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+              {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
+              <p className="text-xs text-muted-foreground">
+                Mínimo 8 caracteres, 1 maiúscula, 1 minúscula e 1 número
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -148,10 +177,11 @@ const Register = () => {
                   placeholder="••••••••"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="pl-10 h-12 bg-muted/50 border-border"
+                  className={`pl-10 h-12 bg-muted/50 border-border ${errors.confirmPassword ? 'border-destructive' : ''}`}
                   required
                 />
               </div>
+              {errors.confirmPassword && <p className="text-xs text-destructive">{errors.confirmPassword}</p>}
             </div>
 
             <div className="flex items-start gap-2">

@@ -112,6 +112,8 @@ export const socialPlatforms = [
   },
 ] as const;
 
+export const SOCIAL_PLATFORMS = socialPlatforms;
+
 export type SocialPlatformId = typeof socialPlatforms[number]["id"];
 
 export const getSocialPlatform = (id: SocialPlatformId) => 
