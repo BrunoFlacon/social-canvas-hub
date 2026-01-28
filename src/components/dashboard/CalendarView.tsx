@@ -1,16 +1,36 @@
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { 
   ChevronLeft, 
   ChevronRight, 
   Plus,
   Clock,
-  Facebook,
-  Instagram,
-  Twitter,
-  Linkedin
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  MoreHorizontal,
+  Trash2,
+  Edit,
+  Eye
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { socialPlatforms } from "@/components/icons/SocialIcons";
+import { useScheduledPosts, ScheduledPost } from "@/hooks/useScheduledPosts";
+import { useNotifications } from "@/contexts/NotificationContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 const daysOfWeek = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const months = [
@@ -18,51 +38,103 @@ const months = [
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
-interface ScheduledPost {
-  id: string;
-  time: string;
-  platform: string;
-  title: string;
-  color: string;
-}
-
-const mockScheduledPosts: Record<number, ScheduledPost[]> = {
-  5: [
-    { id: "1", time: "09:00", platform: "facebook", title: "Post promocional", color: "bg-[#1877F2]" },
-    { id: "2", time: "14:30", platform: "instagram", title: "Stories de produto", color: "bg-gradient-to-br from-[#F58529] via-[#DD2A7B] to-[#8134AF]" },
-  ],
-  12: [
-    { id: "3", time: "10:00", platform: "twitter", title: "Thread sobre novidades", color: "bg-black" },
-  ],
-  18: [
-    { id: "4", time: "08:00", platform: "linkedin", title: "Artigo corporativo", color: "bg-[#0A66C2]" },
-    { id: "5", time: "15:00", platform: "instagram", title: "Reels de produto", color: "bg-gradient-to-br from-[#F58529] via-[#DD2A7B] to-[#8134AF]" },
-    { id: "6", time: "19:00", platform: "facebook", title: "Live stream", color: "bg-[#1877F2]" },
-  ],
-  24: [
-    { id: "7", time: "11:00", platform: "twitter", title: "Campanha", color: "bg-black" },
-  ],
-};
-
-const getPlatformIcon = (platform: string) => {
-  switch (platform) {
-    case "facebook": return Facebook;
-    case "instagram": return Instagram;
-    case "twitter": return Twitter;
-    case "linkedin": return Linkedin;
-    default: return Facebook;
+const statusConfig = {
+  published: {
+    icon: CheckCircle2,
+    label: "Publicado",
+    color: "text-green-500",
+    bg: "bg-green-500/10",
+    dot: "bg-green-500"
+  },
+  scheduled: {
+    icon: Clock,
+    label: "Agendado",
+    color: "text-blue-500",
+    bg: "bg-blue-500/10",
+    dot: "bg-blue-500"
+  },
+  draft: {
+    icon: Edit,
+    label: "Rascunho",
+    color: "text-yellow-500",
+    bg: "bg-yellow-500/10",
+    dot: "bg-yellow-500"
+  },
+  failed: {
+    icon: AlertCircle,
+    label: "Falhou",
+    color: "text-red-500",
+    bg: "bg-red-500/10",
+    dot: "bg-red-500"
   }
 };
 
 export const CalendarView = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [selectedPost, setSelectedPost] = useState<ScheduledPost | null>(null);
+  const [showPostDetails, setShowPostDetails] = useState(false);
+
+  const { posts, loading, deletePost, refetch } = useScheduledPosts();
+  const { addNotification } = useNotifications();
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   
   const firstDayOfMonth = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // Notify about failed posts
+  useEffect(() => {
+    const failedPosts = posts.filter(p => p.status === 'failed');
+    failedPosts.forEach(post => {
+      if (post.error_message) {
+        addNotification({
+          type: 'error',
+          title: 'Falha na publicação',
+          message: `Post "${post.content.substring(0, 50)}..." falhou. ${getSuggestion(post.error_message)}`,
+          platform: post.platforms[0],
+        });
+      }
+    });
+  }, [posts]);
+
+  const getSuggestion = (error: string): string => {
+    if (error.toLowerCase().includes('token')) {
+      return 'Sugestão: Reconecte sua conta na aba Configurações.';
+    }
+    if (error.toLowerCase().includes('rate limit')) {
+      return 'Sugestão: Aguarde alguns minutos e tente novamente.';
+    }
+    if (error.toLowerCase().includes('image') || error.toLowerCase().includes('media')) {
+      return 'Sugestão: Verifique se a mídia está no formato correto.';
+    }
+    if (error.toLowerCase().includes('size')) {
+      return 'Sugestão: Reduza o tamanho do arquivo ou texto.';
+    }
+    return 'Sugestão: Verifique as configurações e tente novamente.';
+  };
+
+  // Group posts by day of month
+  const postsByDay = useMemo(() => {
+    const grouped: Record<number, ScheduledPost[]> = {};
+    
+    posts.forEach(post => {
+      const postDate = post.scheduled_at 
+        ? new Date(post.scheduled_at) 
+        : post.published_at 
+          ? new Date(post.published_at)
+          : new Date(post.created_at);
+      
+      if (postDate.getMonth() === month && postDate.getFullYear() === year) {
+        const day = postDate.getDate();
+        if (!grouped[day]) grouped[day] = [];
+        grouped[day].push(post);
+      }
+    });
+    
+    return grouped;
+  }, [posts, month, year]);
 
   const goToPrevMonth = () => {
     setCurrentDate(new Date(year, month - 1, 1));
@@ -82,7 +154,33 @@ export const CalendarView = () => {
     days.push(i);
   }
 
-  const selectedDayPosts = selectedDay ? mockScheduledPosts[selectedDay] || [] : [];
+  const selectedDayPosts = selectedDay ? postsByDay[selectedDay] || [] : [];
+
+  const handleDeletePost = async (postId: string) => {
+    const success = await deletePost(postId);
+    if (success) {
+      addNotification({
+        type: 'success',
+        title: 'Post excluído',
+        message: 'O post foi removido com sucesso.',
+      });
+    }
+  };
+
+  const viewPostDetails = (post: ScheduledPost) => {
+    setSelectedPost(post);
+    setShowPostDetails(true);
+  };
+
+  const formatPostTime = (post: ScheduledPost): string => {
+    const date = post.scheduled_at 
+      ? new Date(post.scheduled_at) 
+      : post.published_at 
+        ? new Date(post.published_at)
+        : new Date(post.created_at);
+    
+    return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  };
 
   return (
     <motion.div
@@ -94,6 +192,16 @@ export const CalendarView = () => {
         <p className="text-muted-foreground">
           Visualize e gerencie suas publicações agendadas
         </p>
+      </div>
+
+      {/* Status Legend */}
+      <div className="flex flex-wrap gap-4 mb-6">
+        {Object.entries(statusConfig).map(([key, config]) => (
+          <div key={key} className="flex items-center gap-2">
+            <div className={cn("w-2.5 h-2.5 rounded-full", config.dot)} />
+            <span className="text-sm text-muted-foreground">{config.label}</span>
+          </div>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -132,58 +240,67 @@ export const CalendarView = () => {
           </div>
 
           {/* Calendar Grid */}
-          <div className="grid grid-cols-7 gap-2">
-            {days.map((day, index) => {
-              const hasPosts = day && mockScheduledPosts[day];
-              const isSelected = day === selectedDay;
-              const isToday = day === new Date().getDate() && 
-                month === new Date().getMonth() && 
-                year === new Date().getFullYear();
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-7 gap-2">
+              {days.map((day, index) => {
+                const dayPosts = day ? postsByDay[day] : undefined;
+                const isSelected = day === selectedDay;
+                const isToday = day === new Date().getDate() && 
+                  month === new Date().getMonth() && 
+                  year === new Date().getFullYear();
 
-              return (
-                <motion.div
-                  key={index}
-                  whileHover={day ? { scale: 1.05 } : {}}
-                  className={cn(
-                    "aspect-square rounded-xl p-2 transition-all cursor-pointer relative",
-                    day ? "hover:bg-muted/50" : "",
-                    isSelected && "bg-primary/20 border border-primary/50",
-                    isToday && !isSelected && "bg-accent/20 border border-accent/50"
-                  )}
-                  onClick={() => day && setSelectedDay(day)}
-                >
-                  {day && (
-                    <>
-                      <span className={cn(
-                        "text-sm font-medium",
-                        isToday && "text-accent",
-                        isSelected && "text-primary"
-                      )}>
-                        {day}
-                      </span>
-                      {hasPosts && (
-                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
-                          {mockScheduledPosts[day]!.slice(0, 3).map((post, i) => (
-                            <div
-                              key={i}
-                              className={cn("w-1.5 h-1.5 rounded-full", post.color)}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </motion.div>
-              );
-            })}
-          </div>
+                return (
+                  <motion.div
+                    key={index}
+                    whileHover={day ? { scale: 1.05 } : {}}
+                    className={cn(
+                      "aspect-square rounded-xl p-2 transition-all cursor-pointer relative",
+                      day ? "hover:bg-muted/50" : "",
+                      isSelected && "bg-primary/20 border border-primary/50",
+                      isToday && !isSelected && "bg-accent/20 border border-accent/50"
+                    )}
+                    onClick={() => day && setSelectedDay(day)}
+                  >
+                    {day && (
+                      <>
+                        <span className={cn(
+                          "text-sm font-medium",
+                          isToday && "text-accent",
+                          isSelected && "text-primary"
+                        )}>
+                          {day}
+                        </span>
+                        {dayPosts && dayPosts.length > 0 && (
+                          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+                            {dayPosts.slice(0, 3).map((post, i) => (
+                              <div
+                                key={i}
+                                className={cn("w-1.5 h-1.5 rounded-full", statusConfig[post.status]?.dot || "bg-gray-500")}
+                              />
+                            ))}
+                            {dayPosts.length > 3 && (
+                              <span className="text-[8px] text-muted-foreground">+{dayPosts.length - 3}</span>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Selected Day Details */}
         <div className="glass-card rounded-2xl border border-border p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-display font-bold text-lg">
-              {selectedDay ? `Dia ${selectedDay}` : "Selecione um dia"}
+              {selectedDay ? `${selectedDay} de ${months[month]}` : "Selecione um dia"}
             </h3>
             <button className="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
               <Plus className="w-5 h-5" />
@@ -192,31 +309,85 @@ export const CalendarView = () => {
 
           {selectedDay ? (
             selectedDayPosts.length > 0 ? (
-              <div className="space-y-3">
+              <div className="space-y-3 max-h-[500px] overflow-y-auto">
                 {selectedDayPosts.map((post, index) => {
-                  const Icon = getPlatformIcon(post.platform);
+                  const StatusIcon = statusConfig[post.status]?.icon || Clock;
+                  
                   return (
                     <motion.div
                       key={post.id}
                       initial={{ opacity: 0, x: 20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.1 }}
-                      className="p-4 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer group"
+                      className="p-4 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors group"
                     >
                       <div className="flex items-start gap-3">
-                        <div className={cn(
-                          "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-                          post.color
-                        )}>
-                          <Icon className="w-5 h-5 text-white" />
+                        <div className="flex -space-x-1.5 shrink-0">
+                          {post.platforms.slice(0, 3).map((platformId) => {
+                            const platform = socialPlatforms.find(p => p.id === platformId);
+                            if (!platform) return null;
+                            const Icon = platform.icon;
+                            return (
+                              <div
+                                key={platformId}
+                                className={cn(
+                                  "w-7 h-7 rounded-md flex items-center justify-center border-2 border-card",
+                                  platform.color
+                                )}
+                              >
+                                <Icon className="w-3.5 h-3.5 text-white" />
+                              </div>
+                            );
+                          })}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm">{post.title}</p>
-                          <div className="flex items-center gap-1 mt-1 text-muted-foreground">
-                            <Clock className="w-3 h-3" />
-                            <span className="text-xs">{post.time}</span>
+                          <p className="text-sm line-clamp-2 mb-2">{post.content}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={cn(
+                              "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium",
+                              statusConfig[post.status]?.bg,
+                              statusConfig[post.status]?.color
+                            )}>
+                              <StatusIcon className="w-3 h-3" />
+                              {statusConfig[post.status]?.label}
+                            </span>
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {formatPostTime(post)}
+                            </span>
                           </div>
+                          
+                          {/* Error message and suggestion */}
+                          {post.status === 'failed' && post.error_message && (
+                            <div className="mt-2 p-2 bg-red-500/10 rounded-lg">
+                              <p className="text-xs text-red-500">{post.error_message}</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {getSuggestion(post.error_message)}
+                              </p>
+                            </div>
+                          )}
                         </div>
+                        
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-muted transition-all">
+                              <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => viewPostDetails(post)}>
+                              <Eye className="w-4 h-4 mr-2" />
+                              Ver detalhes
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={() => handleDeletePost(post.id)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </motion.div>
                   );
@@ -228,7 +399,7 @@ export const CalendarView = () => {
                   <Clock className="w-8 h-8 text-muted-foreground" />
                 </div>
                 <p className="text-muted-foreground mb-4">
-                  Nenhuma publicação agendada
+                  Nenhuma publicação neste dia
                 </p>
                 <button className="text-primary text-sm hover:underline">
                   + Agendar publicação
@@ -244,6 +415,116 @@ export const CalendarView = () => {
           )}
         </div>
       </div>
+
+      {/* Post Details Dialog */}
+      <Dialog open={showPostDetails} onOpenChange={setShowPostDetails}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Detalhes do Post</DialogTitle>
+            <DialogDescription>
+              Informações completas sobre a publicação
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedPost && (
+            <div className="space-y-4 mt-4">
+              {/* Status */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Status:</span>
+                <span className={cn(
+                  "inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium",
+                  statusConfig[selectedPost.status]?.bg,
+                  statusConfig[selectedPost.status]?.color
+                )}>
+                  {statusConfig[selectedPost.status]?.label}
+                </span>
+              </div>
+
+              {/* Platforms */}
+              <div>
+                <span className="text-sm text-muted-foreground block mb-2">Plataformas:</span>
+                <div className="flex flex-wrap gap-2">
+                  {selectedPost.platforms.map((platformId) => {
+                    const platform = socialPlatforms.find(p => p.id === platformId);
+                    if (!platform) return null;
+                    const Icon = platform.icon;
+                    return (
+                      <div
+                        key={platformId}
+                        className={cn(
+                          "flex items-center gap-2 px-2 py-1 rounded-lg",
+                          platform.color
+                        )}
+                      >
+                        <Icon className="w-4 h-4 text-white" />
+                        <span className="text-xs text-white font-medium">{platform.name}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Content */}
+              <div>
+                <span className="text-sm text-muted-foreground block mb-2">Conteúdo:</span>
+                <p className="text-sm bg-muted/50 rounded-lg p-3">{selectedPost.content}</p>
+              </div>
+
+              {/* Dates */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-sm text-muted-foreground block mb-1">Criado em:</span>
+                  <span className="text-sm">{new Date(selectedPost.created_at).toLocaleString('pt-BR')}</span>
+                </div>
+                {selectedPost.scheduled_at && (
+                  <div>
+                    <span className="text-sm text-muted-foreground block mb-1">Agendado para:</span>
+                    <span className="text-sm">{new Date(selectedPost.scheduled_at).toLocaleString('pt-BR')}</span>
+                  </div>
+                )}
+                {selectedPost.published_at && (
+                  <div>
+                    <span className="text-sm text-muted-foreground block mb-1">Publicado em:</span>
+                    <span className="text-sm">{new Date(selectedPost.published_at).toLocaleString('pt-BR')}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Error */}
+              {selectedPost.error_message && (
+                <div className="p-3 bg-red-500/10 rounded-lg">
+                  <span className="text-sm font-medium text-red-500 block mb-1">Erro:</span>
+                  <p className="text-sm text-red-500">{selectedPost.error_message}</p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {getSuggestion(selectedPost.error_message)}
+                  </p>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-4">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setShowPostDetails(false)}
+                >
+                  Fechar
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    handleDeletePost(selectedPost.id);
+                    setShowPostDetails(false);
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Excluir
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 };

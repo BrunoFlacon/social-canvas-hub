@@ -3,16 +3,16 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 
-interface UploadedMedia {
+export interface UploadedMedia {
   id: string;
   name: string;
   file_url: string;
   file_type: string;
-  file_size: number;
-  width?: number;
-  height?: number;
-  duration?: number;
-  thumbnail_url?: string;
+  file_size: number | null;
+  width?: number | null;
+  height?: number | null;
+  duration?: number | null;
+  thumbnail_url?: string | null;
 }
 
 export function useMediaUpload() {
