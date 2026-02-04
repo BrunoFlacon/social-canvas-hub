@@ -12,6 +12,7 @@ import { StatsCard } from "@/components/dashboard/StatsCard";
 import { CreatePostPanel } from "@/components/dashboard/CreatePostPanel";
 import { RecentPosts } from "@/components/dashboard/RecentPosts";
 import { AnalyticsChart } from "@/components/dashboard/AnalyticsChart";
+import { AdvancedAnalytics } from "@/components/dashboard/AdvancedAnalytics";
 import { SocialNetworkCard } from "@/components/dashboard/SocialNetworkCard";
 import { CalendarView } from "@/components/dashboard/CalendarView";
 import { StoriesLivesView } from "@/components/dashboard/StoriesLivesView";
@@ -68,51 +69,7 @@ const Dashboard = () => {
         );
 
       case "analytics":
-        return (
-          <div>
-            <div className="mb-8">
-              <h1 className="font-display font-bold text-3xl mb-2">Analytics</h1>
-              <p className="text-muted-foreground">
-                Acompanhe o desempenho de suas publicações em tempo real
-              </p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <StatsCard
-                title="Total de Views"
-                value="1.2M"
-                icon={Eye}
-                trend={12.5}
-                trendLabel="vs semana anterior"
-                color="primary"
-              />
-              <StatsCard
-                title="Engajamento"
-                value="89.5K"
-                icon={Heart}
-                trend={8.2}
-                trendLabel="vs semana anterior"
-                color="accent"
-              />
-              <StatsCard
-                title="Novos Seguidores"
-                value="5.2K"
-                icon={Users}
-                trend={-2.1}
-                trendLabel="vs semana anterior"
-                color="success"
-              />
-              <StatsCard
-                title="Taxa de Conversão"
-                value="3.8%"
-                icon={TrendingUp}
-                trend={15.3}
-                trendLabel="vs semana anterior"
-                color="warning"
-              />
-            </div>
-            <AnalyticsChart />
-          </div>
-        );
+        return <AdvancedAnalytics />;
 
       case "calendar":
         return <CalendarView />;
