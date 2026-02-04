@@ -16,16 +16,28 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
-  Trash2
+  Trash2,
+  Wand2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { socialPlatforms, SocialPlatformId } from "@/components/icons/SocialIcons";
 import { useMediaUpload, type UploadedMedia } from "@/hooks/useMediaUpload";
 import { useScheduledPosts } from "@/hooks/useScheduledPosts";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { useToast } from "@/hooks/use-toast";
+import { useAIContent } from "@/hooks/useAIContent";
+import { usePublisher } from "@/hooks/usePublisher";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
@@ -129,12 +141,17 @@ export const CreatePostPanel = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showHashtags, setShowHashtags] = useState(false);
   const [showBestTimes, setShowBestTimes] = useState(false);
+  const [showAIDialog, setShowAIDialog] = useState(false);
+  const [aiTopic, setAiTopic] = useState("");
+  const [aiTone, setAiTone] = useState("profissional");
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadMedia, uploading, progress: uploadProgress } = useMediaUpload();
   const { createPost } = useScheduledPosts();
   const { addNotification } = useNotifications();
   const { toast } = useToast();
+  const { generateContent, generating } = useAIContent();
+  const { publishNow, publishing } = usePublisher();
 
   const togglePlatform = (id: SocialPlatformId) => {
     setSelectedPlatforms(prev =>
@@ -224,6 +241,12 @@ export const CreatePostPanel = () => {
     const formatted = targetDate.toISOString().slice(0, 16);
     setScheduledDate(formatted);
     setShowBestTimes(false);
+    
+    addNotification({
+      type: 'success',
+      title: 'Horário sugerido aplicado',
+      message: `Agendado para ${day} às ${timePart}`,
+    });
     
     toast({
       title: "Horário aplicado!",
@@ -593,12 +616,108 @@ export const CreatePostPanel = () => {
                 </div>
               </PopoverContent>
             </Popover>
-            <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-sm text-muted-foreground hover:text-foreground transition-colors">
-              <Sparkles className="w-4 h-4" />
+            <button 
+              onClick={() => setShowAIDialog(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-primary/20 to-accent/20 hover:from-primary/30 hover:to-accent/30 text-sm text-foreground transition-colors"
+            >
+              <Wand2 className="w-4 h-4 text-primary" />
               Gerar com IA
             </button>
           </div>
         </div>
+
+        {/* AI Generation Dialog */}
+        <Dialog open={showAIDialog} onOpenChange={setShowAIDialog}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Wand2 className="w-5 h-5 text-primary" />
+                Gerar Conteúdo com IA
+              </DialogTitle>
+              <DialogDescription>
+                Descreva o tema do seu post e a IA irá criar o conteúdo para você
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4 py-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Tema do Post</label>
+                <Textarea
+                  value={aiTopic}
+                  onChange={(e) => setAiTopic(e.target.value)}
+                  placeholder="Ex: Lançamento de novo produto de skincare para pele oleosa..."
+                  className="min-h-[100px]"
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium mb-2 block">Tom da Mensagem</label>
+                <div className="flex flex-wrap gap-2">
+                  {["profissional", "descontraído", "inspiracional", "informativo", "promocional"].map((tone) => (
+                    <button
+                      key={tone}
+                      onClick={() => setAiTone(tone)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-sm transition-colors capitalize",
+                        aiTone === tone
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted hover:bg-muted/80"
+                      )}
+                    >
+                      {tone}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {selectedPlatforms.length > 0 && (
+                <div className="text-sm text-muted-foreground">
+                  Otimizado para: {selectedPlatforms.map(p => 
+                    socialPlatforms.find(sp => sp.id === p)?.name
+                  ).join(", ")}
+                </div>
+              )}
+            </div>
+            
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setShowAIDialog(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={async () => {
+                  const result = await generateContent({
+                    topic: aiTopic,
+                    platforms: selectedPlatforms,
+                    tone: aiTone,
+                  });
+                  
+                  if (result) {
+                    setContent(result.post + "\n\n" + result.hashtags);
+                    setShowAIDialog(false);
+                    setAiTopic("");
+                  }
+                }}
+                disabled={generating || !aiTopic.trim()}
+                className="bg-gradient-to-r from-primary to-accent"
+              >
+                {generating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Gerando...
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="w-4 h-4 mr-2" />
+                    Gerar Conteúdo
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Schedule */}
         <div>
@@ -705,13 +824,42 @@ export const CreatePostPanel = () => {
               variant="outline" 
               className="border-border"
               onClick={() => handleSubmit(true)}
-              disabled={isSubmitting || !content.trim()}
+              disabled={isSubmitting || publishing || !content.trim()}
             >
               {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               Salvar Rascunho
             </Button>
+            {!scheduledDate && (
+              <Button 
+                variant="secondary"
+                disabled={isSubmitting || publishing || !content.trim() || selectedPlatforms.length === 0}
+                onClick={async () => {
+                  if (!content.trim() || selectedPlatforms.length === 0) return;
+                  
+                  const mediaUrls = uploadedFiles.map(f => f.file_url);
+                  const result = await publishNow(content.trim(), selectedPlatforms, mediaUrls);
+                  
+                  if (result) {
+                    // Reset form
+                    setContent("");
+                    setSelectedPlatforms([]);
+                    setSelectedMedia(null);
+                    setScheduledDate("");
+                    setUploadedFiles([]);
+                  }
+                }}
+                className="gap-2"
+              >
+                {publishing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                Publicar Agora (API)
+              </Button>
+            )}
             <Button 
-              disabled={isSubmitting || !content.trim() || selectedPlatforms.length === 0}
+              disabled={isSubmitting || publishing || !content.trim() || selectedPlatforms.length === 0}
               onClick={() => handleSubmit(false)}
               className="bg-gradient-to-r from-primary to-accent hover:opacity-90 text-primary-foreground gap-2"
             >
@@ -720,7 +868,7 @@ export const CreatePostPanel = () => {
               ) : (
                 <Send className="w-4 h-4" />
               )}
-              {scheduledDate ? "Agendar" : "Publicar Agora"}
+              {scheduledDate ? "Agendar" : "Salvar Post"}
             </Button>
           </div>
         </div>
