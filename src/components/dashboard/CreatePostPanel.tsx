@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { socialPlatforms, SocialPlatformId } from "@/components/icons/SocialIcons";
 import { useMediaUpload, type UploadedMedia } from "@/hooks/useMediaUpload";
+import { BulkUploadDialog } from "@/components/dashboard/BulkUploadDialog";
 import { useScheduledPosts } from "@/hooks/useScheduledPosts";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { useToast } from "@/hooks/use-toast";
@@ -144,6 +145,7 @@ export const CreatePostPanel = () => {
   const [showAIDialog, setShowAIDialog] = useState(false);
   const [aiTopic, setAiTopic] = useState("");
   const [aiTone, setAiTone] = useState("profissional");
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadMedia, uploading, progress: uploadProgress } = useMediaUpload();
@@ -815,10 +817,21 @@ export const CreatePostPanel = () => {
       {/* Actions */}
       <div className="p-6 border-t border-border bg-muted/30">
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {selectedPlatforms.length} redes selecionadas
-            {uploadedFiles.length > 0 && ` • ${uploadedFiles.length} arquivo(s)`}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-muted-foreground">
+              {selectedPlatforms.length} redes selecionadas
+              {uploadedFiles.length > 0 && ` • ${uploadedFiles.length} arquivo(s)`}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowBulkUpload(true)}
+              className="gap-1.5"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Importar CSV
+            </Button>
+          </div>
           <div className="flex gap-3">
             <Button 
               variant="outline" 
@@ -840,7 +853,6 @@ export const CreatePostPanel = () => {
                   const result = await publishNow(content.trim(), selectedPlatforms, mediaUrls);
                   
                   if (result) {
-                    // Reset form
                     setContent("");
                     setSelectedPlatforms([]);
                     setSelectedMedia(null);
@@ -873,6 +885,18 @@ export const CreatePostPanel = () => {
           </div>
         </div>
       </div>
+
+      {/* Bulk Upload Dialog */}
+      <BulkUploadDialog
+        open={showBulkUpload}
+        onOpenChange={setShowBulkUpload}
+        onComplete={() => {
+          toast({
+            title: "Importação concluída",
+            description: "Verifique o calendário para ver os posts importados.",
+          });
+        }}
+      />
     </motion.div>
   );
 };

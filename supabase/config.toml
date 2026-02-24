@@ -28,3 +28,15 @@ verify_jwt = false
 
 [functions.get-analytics]
 verify_jwt = false
+
+[functions.social-oauth-init]
+verify_jwt = false
+
+[functions.social-oauth-callback]
+verify_jwt = false
+
+[functions.refresh-social-token]
+verify_jwt = false
+
+[functions.bulk-import-posts]
+verify_jwt = false

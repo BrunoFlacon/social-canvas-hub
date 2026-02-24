@@ -5,12 +5,13 @@ import {
   Bell, 
   Key, 
   Shield, 
-  Palette, 
   Globe, 
   Save,
   Camera,
   Check,
-  AlertCircle
+  AlertCircle,
+  Loader2,
+  Unplug
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,19 +19,21 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { useSocialConnections } from "@/hooks/useSocialConnections";
 import { cn } from "@/lib/utils";
 
-interface ApiToken {
-  id: string;
-  name: string;
-  platform: string;
-  isConnected: boolean;
-  lastUsed?: string;
-}
+const platformConfigs = [
+  { platform: 'facebook', name: 'Meta Business Suite (Facebook)', icon: '📘' },
+  { platform: 'instagram', name: 'Instagram Business', icon: '📸' },
+  { platform: 'google', name: 'Google API', icon: '🔍' },
+  { platform: 'youtube', name: 'YouTube Data API', icon: '▶️' },
+  { platform: 'twitter', name: 'X (Twitter) API', icon: '🐦' },
+];
 
 export const SettingsView = () => {
   const { user, profile, updateProfile } = useAuth();
   const { toast } = useToast();
+  const { connections, loading: connectionsLoading, initiateOAuth, disconnect } = useSocialConnections();
   
   const [profileData, setProfileData] = useState({
     name: profile?.name || user?.email?.split('@')[0] || "",
@@ -48,13 +51,7 @@ export const SettingsView = () => {
     weeklyReport: true
   });
 
-  const [apiTokens, setApiTokens] = useState<ApiToken[]>([
-    { id: '1', name: 'Meta Business Suite', platform: 'meta', isConnected: false },
-    { id: '2', name: 'Google API', platform: 'google', isConnected: false },
-    { id: '3', name: 'YouTube Data API', platform: 'youtube', isConnected: false },
-    { id: '4', name: 'TikTok for Developers', platform: 'tiktok', isConnected: false },
-    { id: '5', name: 'X (Twitter) API', platform: 'twitter', isConnected: false },
-  ]);
+  const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
 
   const handleSaveProfile = () => {
     updateProfile({ name: profileData.name });
@@ -64,14 +61,15 @@ export const SettingsView = () => {
     });
   };
 
-  const handleConnectApi = (tokenId: string) => {
-    setApiTokens(prev => 
-      prev.map(t => t.id === tokenId ? { ...t, isConnected: !t.isConnected } : t)
-    );
-    toast({
-      title: "API configurada",
-      description: "A conexão com a API foi atualizada."
-    });
+  const handleConnectApi = async (platform: string) => {
+    const existing = connections.find(c => c.platform === platform && c.is_connected);
+    if (existing) {
+      await disconnect(platform);
+      return;
+    }
+    setConnectingPlatform(platform);
+    await initiateOAuth(platform);
+    setConnectingPlatform(null);
   };
 
   return (
@@ -292,55 +290,71 @@ export const SettingsView = () => {
                   Conecte suas contas para publicação automática
                 </p>
               </div>
-              <div className="flex items-center gap-2 text-xs text-amber-500 bg-amber-500/10 px-3 py-1.5 rounded-full">
-                <AlertCircle className="w-3.5 h-3.5" />
-                Requer backend
-              </div>
+              {connectionsLoading && <Loader2 className="w-5 h-5 animate-spin text-primary" />}
             </div>
             
             <div className="space-y-4">
-              {apiTokens.map((token) => (
-                <div
-                  key={token.id}
-                  className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={cn(
-                      "w-10 h-10 rounded-lg flex items-center justify-center",
-                      token.isConnected ? "bg-green-500/20 text-green-500" : "bg-muted text-muted-foreground"
-                    )}>
-                      <Key className="w-5 h-5" />
+              {platformConfigs.map((config) => {
+                const conn = connections.find(c => c.platform === config.platform && c.is_connected);
+                const isConnecting = connectingPlatform === config.platform;
+                
+                return (
+                  <div
+                    key={config.platform}
+                    className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={cn(
+                        "w-10 h-10 rounded-lg flex items-center justify-center text-lg",
+                        conn ? "bg-green-500/10" : "bg-muted"
+                      )}>
+                        {config.icon}
+                      </div>
+                      <div>
+                        <p className="font-medium">{config.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {conn ? `Conectado${conn.page_name ? ` • ${conn.page_name}` : ''}` : "Não conectado"}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium">{token.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {token.isConnected ? "Conectado" : "Não conectado"}
-                      </p>
+                    <div className="flex gap-2">
+                      {conn && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => disconnect(config.platform)}
+                        >
+                          <Unplug className="w-4 h-4 mr-1" />
+                          Desconectar
+                        </Button>
+                      )}
+                      <Button
+                        variant={conn ? "outline" : "default"}
+                        size="sm"
+                        onClick={() => handleConnectApi(config.platform)}
+                        disabled={isConnecting}
+                        className={conn ? "" : "bg-gradient-to-r from-primary to-accent"}
+                      >
+                        {isConnecting ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : conn ? (
+                          <>
+                            <Check className="w-4 h-4 mr-2" />
+                            Reconectar
+                          </>
+                        ) : (
+                          "Conectar"
+                        )}
+                      </Button>
                     </div>
                   </div>
-                  <Button
-                    variant={token.isConnected ? "outline" : "default"}
-                    size="sm"
-                    onClick={() => handleConnectApi(token.id)}
-                    className={token.isConnected ? "" : "bg-gradient-to-r from-primary to-accent"}
-                  >
-                    {token.isConnected ? (
-                      <>
-                        <Check className="w-4 h-4 mr-2" />
-                        Conectado
-                      </>
-                    ) : (
-                      "Conectar"
-                    )}
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="mt-6 p-4 bg-muted/30 rounded-xl border border-dashed border-border">
               <p className="text-sm text-muted-foreground text-center">
-                Para conexões reais com APIs, é necessário habilitar o backend do Lovable Cloud.
-                As integrações simuladas acima são apenas para demonstração.
+                Configure as credenciais (META_APP_ID, GOOGLE_CLIENT_ID, etc.) nos secrets do projeto para habilitar as conexões OAuth reais.
               </p>
             </div>
           </motion.div>

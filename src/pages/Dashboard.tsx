@@ -6,6 +6,7 @@ import {
   Users, 
   TrendingUp 
 } from "lucide-react";
+import { useWebPushNotifications } from "@/hooks/useWebPushNotifications";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { StatsCard } from "@/components/dashboard/StatsCard";
@@ -29,6 +30,9 @@ const Dashboard = () => {
     "facebook", "instagram", "linkedin"
   ]);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  // Initialize realtime push notifications
+  useWebPushNotifications();
 
   const toggleConnection = (id: SocialPlatformId) => {
     setConnectedPlatforms(prev =>
