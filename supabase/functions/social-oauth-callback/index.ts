@@ -1,0 +1,268 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Authorization required" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Invalid authentication" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { code, state, platform } = await req.json();
+
+    if (!code || !state || !platform) {
+      return new Response(
+        JSON.stringify({ error: "code, state, and platform are required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Verify state
+    const { data: oauthState, error: stateError } = await supabase
+      .from("oauth_states")
+      .select("*")
+      .eq("state", state)
+      .eq("user_id", user.id)
+      .eq("platform", platform)
+      .single();
+
+    if (stateError || !oauthState) {
+      return new Response(
+        JSON.stringify({ error: "Invalid or expired OAuth state" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Check expiry
+    if (new Date(oauthState.expires_at) < new Date()) {
+      await supabase.from("oauth_states").delete().eq("id", oauthState.id);
+      return new Response(
+        JSON.stringify({ error: "OAuth state expired. Please try again." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Delete used state
+    await supabase.from("oauth_states").delete().eq("id", oauthState.id);
+
+    let accessToken = "";
+    let refreshToken = "";
+    let expiresIn = 0;
+    let platformUserId = "";
+    let pageName = "";
+    let pageId = "";
+
+    // Exchange code for tokens
+    switch (platform) {
+      case "facebook":
+      case "instagram": {
+        const metaAppId = Deno.env.get("META_APP_ID")!;
+        const metaAppSecret = Deno.env.get("META_APP_SECRET")!;
+        
+        const tokenRes = await fetch(
+          `https://graph.facebook.com/v21.0/oauth/access_token?client_id=${metaAppId}&redirect_uri=${encodeURIComponent(oauthState.redirect_uri)}&client_secret=${metaAppSecret}&code=${code}`
+        );
+        const tokenData = await tokenRes.json();
+        
+        if (tokenData.error) {
+          throw new Error(tokenData.error.message);
+        }
+
+        // Exchange for long-lived token
+        const longRes = await fetch(
+          `https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${metaAppId}&client_secret=${metaAppSecret}&fb_exchange_token=${tokenData.access_token}`
+        );
+        const longData = await longRes.json();
+
+        accessToken = longData.access_token || tokenData.access_token;
+        expiresIn = longData.expires_in || 5184000; // 60 days
+
+        // Get user info
+        const meRes = await fetch(`https://graph.facebook.com/v21.0/me?access_token=${accessToken}&fields=id,name`);
+        const meData = await meRes.json();
+        platformUserId = meData.id;
+        pageName = meData.name;
+
+        // For Instagram, get IG user ID via pages
+        if (platform === "instagram") {
+          const pagesRes = await fetch(`https://graph.facebook.com/v21.0/me/accounts?access_token=${accessToken}`);
+          const pagesData = await pagesRes.json();
+          if (pagesData.data?.[0]) {
+            pageId = pagesData.data[0].id;
+            const igRes = await fetch(`https://graph.facebook.com/v21.0/${pageId}?fields=instagram_business_account&access_token=${accessToken}`);
+            const igData = await igRes.json();
+            if (igData.instagram_business_account?.id) {
+              platformUserId = igData.instagram_business_account.id;
+            }
+          }
+        }
+        break;
+      }
+      case "google":
+      case "youtube": {
+        const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID")!;
+        const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
+        
+        const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            code,
+            client_id: googleClientId,
+            client_secret: googleClientSecret,
+            redirect_uri: oauthState.redirect_uri,
+            grant_type: "authorization_code",
+          }),
+        });
+        const tokenData = await tokenRes.json();
+
+        if (tokenData.error) {
+          throw new Error(tokenData.error_description || tokenData.error);
+        }
+
+        accessToken = tokenData.access_token;
+        refreshToken = tokenData.refresh_token || "";
+        expiresIn = tokenData.expires_in || 3600;
+
+        // Get user info
+        const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const userData = await userRes.json();
+        platformUserId = userData.id;
+        pageName = userData.name || userData.email;
+
+        // For YouTube, get channel info
+        if (platform === "youtube") {
+          const channelRes = await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true", {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+          const channelData = await channelRes.json();
+          if (channelData.items?.[0]) {
+            platformUserId = channelData.items[0].id;
+            pageName = channelData.items[0].snippet.title;
+          }
+        }
+        break;
+      }
+      case "twitter": {
+        const twitterKey = Deno.env.get("TWITTER_CONSUMER_KEY")!;
+        const twitterSecret = Deno.env.get("TWITTER_CONSUMER_SECRET")!;
+        
+        const tokenRes = await fetch("https://api.x.com/2/oauth2/token", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Authorization: `Basic ${btoa(`${twitterKey}:${twitterSecret}`)}`,
+          },
+          body: new URLSearchParams({
+            code,
+            grant_type: "authorization_code",
+            redirect_uri: oauthState.redirect_uri,
+            code_verifier: "challenge",
+          }),
+        });
+        const tokenData = await tokenRes.json();
+
+        if (tokenData.error) {
+          throw new Error(tokenData.error_description || tokenData.error);
+        }
+
+        accessToken = tokenData.access_token;
+        refreshToken = tokenData.refresh_token || "";
+        expiresIn = tokenData.expires_in || 7200;
+
+        // Get user info
+        const userRes = await fetch("https://api.x.com/2/users/me", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const userData = await userRes.json();
+        platformUserId = userData.data?.id || "";
+        pageName = userData.data?.username || "";
+        break;
+      }
+      default:
+        throw new Error(`Platform '${platform}' not supported`);
+    }
+
+    const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+
+    // Upsert social connection
+    const { error: upsertError } = await supabase
+      .from("social_connections")
+      .upsert({
+        user_id: user.id,
+        platform,
+        access_token: accessToken,
+        refresh_token: refreshToken || null,
+        token_expires_at: expiresAt,
+        platform_user_id: platformUserId,
+        page_name: pageName,
+        page_id: pageId || null,
+        is_connected: true,
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: "user_id,platform",
+      });
+
+    if (upsertError) {
+      // If conflict resolution fails, try update
+      await supabase
+        .from("social_connections")
+        .update({
+          access_token: accessToken,
+          refresh_token: refreshToken || null,
+          token_expires_at: expiresAt,
+          platform_user_id: platformUserId,
+          page_name: pageName,
+          page_id: pageId || null,
+          is_connected: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", user.id)
+        .eq("platform", platform);
+    }
+
+    console.log(`OAuth callback successful for ${platform}, user: ${user.id}`);
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      platform, 
+      pageName,
+      platformUserId 
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    console.error("Error in social-oauth-callback:", error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+});

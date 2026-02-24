@@ -56,6 +56,36 @@ export type Database = {
         }
         Relationships: []
       }
+      oauth_states: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          platform: string
+          redirect_uri: string
+          state: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          platform: string
+          redirect_uri: string
+          state: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          platform?: string
+          redirect_uri?: string
+          state?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -91,6 +121,7 @@ export type Database = {
       }
       scheduled_posts: {
         Row: {
+          bulk_import_id: string | null
           content: string
           created_at: string
           error_message: string | null
@@ -106,6 +137,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          bulk_import_id?: string | null
           content: string
           created_at?: string
           error_message?: string | null
@@ -121,6 +153,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          bulk_import_id?: string | null
           content?: string
           created_at?: string
           error_message?: string | null
@@ -184,7 +217,45 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      social_connections_safe: {
+        Row: {
+          created_at: string | null
+          id: string | null
+          is_connected: boolean | null
+          page_id: string | null
+          page_name: string | null
+          platform: string | null
+          platform_user_id: string | null
+          token_expires_at: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string | null
+          is_connected?: boolean | null
+          page_id?: string | null
+          page_name?: string | null
+          platform?: string | null
+          platform_user_id?: string | null
+          token_expires_at?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string | null
+          is_connected?: boolean | null
+          page_id?: string | null
+          page_name?: string | null
+          platform?: string | null
+          platform_user_id?: string | null
+          token_expires_at?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never
