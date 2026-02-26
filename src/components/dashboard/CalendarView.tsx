@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -11,12 +11,15 @@ import {
   MoreHorizontal,
   Trash2,
   Edit,
-  Eye
+  Eye,
+  Filter,
+  BarChart3
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { socialPlatforms } from "@/components/icons/SocialIcons";
 import { useScheduledPosts, ScheduledPost } from "@/hooks/useScheduledPosts";
 import { useNotifications } from "@/contexts/NotificationContext";
+import { supabase } from "@/integrations/supabase/client";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,11 +72,18 @@ const statusConfig = {
   }
 };
 
-export const CalendarView = () => {
+type StatusKey = keyof typeof statusConfig;
+
+interface CalendarViewProps {
+  onCreatePost?: (preSelectedDate?: Date) => void;
+}
+
+export const CalendarView = ({ onCreatePost }: CalendarViewProps) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedPost, setSelectedPost] = useState<ScheduledPost | null>(null);
   const [showPostDetails, setShowPostDetails] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<Set<StatusKey>>(new Set(["published", "scheduled", "draft", "failed"]));
 
   const { posts, loading, deletePost, refetch } = useScheduledPosts();
   const { addNotification } = useNotifications();
@@ -83,6 +93,24 @@ export const CalendarView = () => {
   
   const firstDayOfMonth = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // Realtime subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('calendar-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'scheduled_posts' },
+        () => {
+          refetch();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refetch]);
 
   // Notify about failed posts
   useEffect(() => {
@@ -100,142 +128,162 @@ export const CalendarView = () => {
   }, [posts]);
 
   const getSuggestion = (error: string): string => {
-    if (error.toLowerCase().includes('token')) {
-      return 'Sugestão: Reconecte sua conta na aba Configurações.';
-    }
-    if (error.toLowerCase().includes('rate limit')) {
-      return 'Sugestão: Aguarde alguns minutos e tente novamente.';
-    }
-    if (error.toLowerCase().includes('image') || error.toLowerCase().includes('media')) {
-      return 'Sugestão: Verifique se a mídia está no formato correto.';
-    }
-    if (error.toLowerCase().includes('size')) {
-      return 'Sugestão: Reduza o tamanho do arquivo ou texto.';
-    }
+    if (error.toLowerCase().includes('token')) return 'Sugestão: Reconecte sua conta na aba Configurações.';
+    if (error.toLowerCase().includes('rate limit')) return 'Sugestão: Aguarde alguns minutos e tente novamente.';
+    if (error.toLowerCase().includes('image') || error.toLowerCase().includes('media')) return 'Sugestão: Verifique se a mídia está no formato correto.';
+    if (error.toLowerCase().includes('size')) return 'Sugestão: Reduza o tamanho do arquivo ou texto.';
     return 'Sugestão: Verifique as configurações e tente novamente.';
   };
 
-  // Group posts by day of month
+  const toggleFilter = (status: StatusKey) => {
+    setActiveFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(status)) {
+        if (next.size > 1) next.delete(status);
+      } else {
+        next.add(status);
+      }
+      return next;
+    });
+  };
+
+  // Filter posts by active status filters
+  const filteredPosts = useMemo(() => 
+    posts.filter(p => activeFilters.has(p.status as StatusKey)),
+    [posts, activeFilters]
+  );
+
+  // Monthly summary
+  const monthlySummary = useMemo(() => {
+    const monthPosts = posts.filter(post => {
+      const postDate = post.scheduled_at ? new Date(post.scheduled_at) : post.published_at ? new Date(post.published_at) : new Date(post.created_at);
+      return postDate.getMonth() === month && postDate.getFullYear() === year;
+    });
+    return {
+      total: monthPosts.length,
+      published: monthPosts.filter(p => p.status === 'published').length,
+      scheduled: monthPosts.filter(p => p.status === 'scheduled').length,
+      draft: monthPosts.filter(p => p.status === 'draft').length,
+      failed: monthPosts.filter(p => p.status === 'failed').length,
+    };
+  }, [posts, month, year]);
+
+  // Group filtered posts by day
   const postsByDay = useMemo(() => {
     const grouped: Record<number, ScheduledPost[]> = {};
-    
-    posts.forEach(post => {
-      const postDate = post.scheduled_at 
-        ? new Date(post.scheduled_at) 
-        : post.published_at 
-          ? new Date(post.published_at)
-          : new Date(post.created_at);
-      
+    filteredPosts.forEach(post => {
+      const postDate = post.scheduled_at ? new Date(post.scheduled_at) : post.published_at ? new Date(post.published_at) : new Date(post.created_at);
       if (postDate.getMonth() === month && postDate.getFullYear() === year) {
         const day = postDate.getDate();
         if (!grouped[day]) grouped[day] = [];
         grouped[day].push(post);
       }
     });
-    
     return grouped;
-  }, [posts, month, year]);
+  }, [filteredPosts, month, year]);
 
-  const goToPrevMonth = () => {
-    setCurrentDate(new Date(year, month - 1, 1));
-    setSelectedDay(null);
-  };
+  const goToPrevMonth = () => { setCurrentDate(new Date(year, month - 1, 1)); setSelectedDay(null); };
+  const goToNextMonth = () => { setCurrentDate(new Date(year, month + 1, 1)); setSelectedDay(null); };
 
-  const goToNextMonth = () => {
-    setCurrentDate(new Date(year, month + 1, 1));
-    setSelectedDay(null);
-  };
-
-  const days = [];
-  for (let i = 0; i < firstDayOfMonth; i++) {
-    days.push(null);
-  }
-  for (let i = 1; i <= daysInMonth; i++) {
-    days.push(i);
-  }
+  const days: (number | null)[] = [];
+  for (let i = 0; i < firstDayOfMonth; i++) days.push(null);
+  for (let i = 1; i <= daysInMonth; i++) days.push(i);
 
   const selectedDayPosts = selectedDay ? postsByDay[selectedDay] || [] : [];
 
   const handleDeletePost = async (postId: string) => {
     const success = await deletePost(postId);
     if (success) {
-      addNotification({
-        type: 'success',
-        title: 'Post excluído',
-        message: 'O post foi removido com sucesso.',
-      });
+      addNotification({ type: 'success', title: 'Post excluído', message: 'O post foi removido com sucesso.' });
     }
   };
 
-  const viewPostDetails = (post: ScheduledPost) => {
-    setSelectedPost(post);
-    setShowPostDetails(true);
-  };
+  const viewPostDetails = (post: ScheduledPost) => { setSelectedPost(post); setShowPostDetails(true); };
 
   const formatPostTime = (post: ScheduledPost): string => {
-    const date = post.scheduled_at 
-      ? new Date(post.scheduled_at) 
-      : post.published_at 
-        ? new Date(post.published_at)
-        : new Date(post.created_at);
-    
+    const date = post.scheduled_at ? new Date(post.scheduled_at) : post.published_at ? new Date(post.published_at) : new Date(post.created_at);
     return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   };
 
+  const handleAddPost = () => {
+    if (onCreatePost && selectedDay) {
+      const preSelectedDate = new Date(year, month, selectedDay, 12, 0);
+      onCreatePost(preSelectedDate);
+    } else if (onCreatePost) {
+      onCreatePost();
+    }
+  };
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-    >
-      <div className="mb-8">
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+      <div className="mb-6">
         <h1 className="font-display font-bold text-3xl mb-2">Calendário Editorial</h1>
-        <p className="text-muted-foreground">
-          Visualize e gerencie suas publicações agendadas
-        </p>
+        <p className="text-muted-foreground">Visualize e gerencie suas publicações agendadas</p>
       </div>
 
-      {/* Status Legend */}
-      <div className="flex flex-wrap gap-4 mb-6">
-        {Object.entries(statusConfig).map(([key, config]) => (
-          <div key={key} className="flex items-center gap-2">
-            <div className={cn("w-2.5 h-2.5 rounded-full", config.dot)} />
-            <span className="text-sm text-muted-foreground">{config.label}</span>
-          </div>
-        ))}
+      {/* Monthly Summary */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+        {[
+          { label: "Total", value: monthlySummary.total, icon: BarChart3, colorClass: "text-foreground" },
+          { label: "Publicados", value: monthlySummary.published, icon: CheckCircle2, colorClass: "text-green-500" },
+          { label: "Agendados", value: monthlySummary.scheduled, icon: Clock, colorClass: "text-blue-500" },
+          { label: "Rascunhos", value: monthlySummary.draft, icon: Edit, colorClass: "text-yellow-500" },
+          { label: "Falhas", value: monthlySummary.failed, icon: AlertCircle, colorClass: "text-red-500" },
+        ].map((item) => {
+          const Icon = item.icon;
+          return (
+            <motion.div
+              key={item.label}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="glass-card rounded-xl border border-border p-4 flex items-center gap-3"
+            >
+              <Icon className={cn("w-5 h-5", item.colorClass)} />
+              <div>
+                <p className="text-2xl font-bold">{item.value}</p>
+                <p className="text-xs text-muted-foreground">{item.label}</p>
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+
+      {/* Status Filters */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        <Filter className="w-4 h-4 text-muted-foreground" />
+        {(Object.entries(statusConfig) as [StatusKey, typeof statusConfig[StatusKey]][]).map(([key, config]) => {
+          const isActive = activeFilters.has(key);
+          return (
+            <button
+              key={key}
+              onClick={() => toggleFilter(key)}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border",
+                isActive ? cn(config.bg, config.color, "border-current") : "bg-muted/30 text-muted-foreground border-transparent opacity-50"
+              )}
+            >
+              <div className={cn("w-2 h-2 rounded-full", isActive ? config.dot : "bg-muted-foreground")} />
+              {config.label}
+            </button>
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 glass-card rounded-2xl border border-border p-6">
           {/* Calendar Header */}
           <div className="flex items-center justify-between mb-6">
-            <h2 className="font-display font-bold text-xl">
-              {months[month]} {year}
-            </h2>
+            <h2 className="font-display font-bold text-xl">{months[month]} {year}</h2>
             <div className="flex items-center gap-2">
-              <button
-                onClick={goToPrevMonth}
-                className="p-2 rounded-lg hover:bg-muted transition-colors"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <button
-                onClick={goToNextMonth}
-                className="p-2 rounded-lg hover:bg-muted transition-colors"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
+              <button onClick={goToPrevMonth} className="p-2 rounded-lg hover:bg-muted transition-colors"><ChevronLeft className="w-5 h-5" /></button>
+              <button onClick={goToNextMonth} className="p-2 rounded-lg hover:bg-muted transition-colors"><ChevronRight className="w-5 h-5" /></button>
             </div>
           </div>
 
           {/* Days of Week */}
           <div className="grid grid-cols-7 gap-2 mb-2">
             {daysOfWeek.map((day) => (
-              <div
-                key={day}
-                className="text-center text-sm font-medium text-muted-foreground py-2"
-              >
-                {day}
-              </div>
+              <div key={day} className="text-center text-sm font-medium text-muted-foreground py-2">{day}</div>
             ))}
           </div>
 
@@ -249,9 +297,7 @@ export const CalendarView = () => {
               {days.map((day, index) => {
                 const dayPosts = day ? postsByDay[day] : undefined;
                 const isSelected = day === selectedDay;
-                const isToday = day === new Date().getDate() && 
-                  month === new Date().getMonth() && 
-                  year === new Date().getFullYear();
+                const isToday = day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear();
 
                 return (
                   <motion.div
@@ -267,24 +313,13 @@ export const CalendarView = () => {
                   >
                     {day && (
                       <>
-                        <span className={cn(
-                          "text-sm font-medium",
-                          isToday && "text-accent",
-                          isSelected && "text-primary"
-                        )}>
-                          {day}
-                        </span>
+                        <span className={cn("text-sm font-medium", isToday && "text-accent", isSelected && "text-primary")}>{day}</span>
                         {dayPosts && dayPosts.length > 0 && (
                           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
                             {dayPosts.slice(0, 3).map((post, i) => (
-                              <div
-                                key={i}
-                                className={cn("w-1.5 h-1.5 rounded-full", statusConfig[post.status]?.dot || "bg-gray-500")}
-                              />
+                              <div key={i} className={cn("w-1.5 h-1.5 rounded-full", statusConfig[post.status as StatusKey]?.dot || "bg-muted-foreground")} />
                             ))}
-                            {dayPosts.length > 3 && (
-                              <span className="text-[8px] text-muted-foreground">+{dayPosts.length - 3}</span>
-                            )}
+                            {dayPosts.length > 3 && <span className="text-[8px] text-muted-foreground">+{dayPosts.length - 3}</span>}
                           </div>
                         )}
                       </>
@@ -302,7 +337,10 @@ export const CalendarView = () => {
             <h3 className="font-display font-bold text-lg">
               {selectedDay ? `${selectedDay} de ${months[month]}` : "Selecione um dia"}
             </h3>
-            <button className="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+            <button
+              onClick={handleAddPost}
+              className="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+            >
               <Plus className="w-5 h-5" />
             </button>
           </div>
@@ -311,8 +349,7 @@ export const CalendarView = () => {
             selectedDayPosts.length > 0 ? (
               <div className="space-y-3 max-h-[500px] overflow-y-auto">
                 {selectedDayPosts.map((post, index) => {
-                  const StatusIcon = statusConfig[post.status]?.icon || Clock;
-                  
+                  const StatusIcon = statusConfig[post.status as StatusKey]?.icon || Clock;
                   return (
                     <motion.div
                       key={post.id}
@@ -328,13 +365,7 @@ export const CalendarView = () => {
                             if (!platform) return null;
                             const Icon = platform.icon;
                             return (
-                              <div
-                                key={platformId}
-                                className={cn(
-                                  "w-7 h-7 rounded-md flex items-center justify-center border-2 border-card",
-                                  platform.color
-                                )}
-                              >
+                              <div key={platformId} className={cn("w-7 h-7 rounded-md flex items-center justify-center border-2 border-card", platform.color)}>
                                 <Icon className="w-3.5 h-3.5 text-white" />
                               </div>
                             );
@@ -343,31 +374,22 @@ export const CalendarView = () => {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm line-clamp-2 mb-2">{post.content}</p>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className={cn(
-                              "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium",
-                              statusConfig[post.status]?.bg,
-                              statusConfig[post.status]?.color
-                            )}>
+                            <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium", statusConfig[post.status as StatusKey]?.bg, statusConfig[post.status as StatusKey]?.color)}>
                               <StatusIcon className="w-3 h-3" />
-                              {statusConfig[post.status]?.label}
+                              {statusConfig[post.status as StatusKey]?.label}
                             </span>
                             <span className="text-xs text-muted-foreground flex items-center gap-1">
                               <Clock className="w-3 h-3" />
                               {formatPostTime(post)}
                             </span>
                           </div>
-                          
-                          {/* Error message and suggestion */}
                           {post.status === 'failed' && post.error_message && (
                             <div className="mt-2 p-2 bg-red-500/10 rounded-lg">
                               <p className="text-xs text-red-500">{post.error_message}</p>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {getSuggestion(post.error_message)}
-                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">{getSuggestion(post.error_message)}</p>
                             </div>
                           )}
                         </div>
-                        
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-muted transition-all">
@@ -376,15 +398,10 @@ export const CalendarView = () => {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => viewPostDetails(post)}>
-                              <Eye className="w-4 h-4 mr-2" />
-                              Ver detalhes
+                              <Eye className="w-4 h-4 mr-2" /> Ver detalhes
                             </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              onClick={() => handleDeletePost(post.id)}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Excluir
+                            <DropdownMenuItem onClick={() => handleDeletePost(post.id)} className="text-destructive focus:text-destructive">
+                              <Trash2 className="w-4 h-4 mr-2" /> Excluir
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -398,19 +415,13 @@ export const CalendarView = () => {
                 <div className="w-16 h-16 rounded-2xl bg-muted mx-auto mb-4 flex items-center justify-center">
                   <Clock className="w-8 h-8 text-muted-foreground" />
                 </div>
-                <p className="text-muted-foreground mb-4">
-                  Nenhuma publicação neste dia
-                </p>
-                <button className="text-primary text-sm hover:underline">
-                  + Agendar publicação
-                </button>
+                <p className="text-muted-foreground mb-4">Nenhuma publicação neste dia</p>
+                <button onClick={handleAddPost} className="text-primary text-sm hover:underline">+ Agendar publicação</button>
               </div>
             )
           ) : (
             <div className="text-center py-12">
-              <p className="text-muted-foreground">
-                Clique em um dia para ver os detalhes
-              </p>
+              <p className="text-muted-foreground">Clique em um dia para ver os detalhes</p>
             </div>
           )}
         </div>
@@ -421,26 +432,16 @@ export const CalendarView = () => {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Detalhes do Post</DialogTitle>
-            <DialogDescription>
-              Informações completas sobre a publicação
-            </DialogDescription>
+            <DialogDescription>Informações completas sobre a publicação</DialogDescription>
           </DialogHeader>
-          
           {selectedPost && (
             <div className="space-y-4 mt-4">
-              {/* Status */}
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Status:</span>
-                <span className={cn(
-                  "inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium",
-                  statusConfig[selectedPost.status]?.bg,
-                  statusConfig[selectedPost.status]?.color
-                )}>
-                  {statusConfig[selectedPost.status]?.label}
+                <span className={cn("inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium", statusConfig[selectedPost.status as StatusKey]?.bg, statusConfig[selectedPost.status as StatusKey]?.color)}>
+                  {statusConfig[selectedPost.status as StatusKey]?.label}
                 </span>
               </div>
-
-              {/* Platforms */}
               <div>
                 <span className="text-sm text-muted-foreground block mb-2">Plataformas:</span>
                 <div className="flex flex-wrap gap-2">
@@ -449,13 +450,7 @@ export const CalendarView = () => {
                     if (!platform) return null;
                     const Icon = platform.icon;
                     return (
-                      <div
-                        key={platformId}
-                        className={cn(
-                          "flex items-center gap-2 px-2 py-1 rounded-lg",
-                          platform.color
-                        )}
-                      >
+                      <div key={platformId} className={cn("flex items-center gap-2 px-2 py-1 rounded-lg", platform.color)}>
                         <Icon className="w-4 h-4 text-white" />
                         <span className="text-xs text-white font-medium">{platform.name}</span>
                       </div>
@@ -463,14 +458,10 @@ export const CalendarView = () => {
                   })}
                 </div>
               </div>
-
-              {/* Content */}
               <div>
                 <span className="text-sm text-muted-foreground block mb-2">Conteúdo:</span>
                 <p className="text-sm bg-muted/50 rounded-lg p-3">{selectedPost.content}</p>
               </div>
-
-              {/* Dates */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <span className="text-sm text-muted-foreground block mb-1">Criado em:</span>
@@ -489,36 +480,17 @@ export const CalendarView = () => {
                   </div>
                 )}
               </div>
-
-              {/* Error */}
               {selectedPost.error_message && (
                 <div className="p-3 bg-red-500/10 rounded-lg">
                   <span className="text-sm font-medium text-red-500 block mb-1">Erro:</span>
                   <p className="text-sm text-red-500">{selectedPost.error_message}</p>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    {getSuggestion(selectedPost.error_message)}
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-2">{getSuggestion(selectedPost.error_message)}</p>
                 </div>
               )}
-
-              {/* Actions */}
               <div className="flex gap-3 pt-4">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setShowPostDetails(false)}
-                >
-                  Fechar
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    handleDeletePost(selectedPost.id);
-                    setShowPostDetails(false);
-                  }}
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Excluir
+                <Button variant="outline" className="flex-1" onClick={() => setShowPostDetails(false)}>Fechar</Button>
+                <Button variant="destructive" onClick={() => { handleDeletePost(selectedPost.id); setShowPostDetails(false); }}>
+                  <Trash2 className="w-4 h-4 mr-2" /> Excluir
                 </Button>
               </div>
             </div>

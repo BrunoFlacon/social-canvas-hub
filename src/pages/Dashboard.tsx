@@ -76,7 +76,7 @@ const Dashboard = () => {
         return <AdvancedAnalytics />;
 
       case "calendar":
-        return <CalendarView />;
+        return <CalendarView onCreatePost={() => setActiveTab("create")} />;
 
       case "stories":
         return <StoriesLivesView />;
