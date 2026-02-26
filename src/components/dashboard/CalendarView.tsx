@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -112,11 +112,13 @@ export const CalendarView = ({ onCreatePost }: CalendarViewProps) => {
     };
   }, [refetch]);
 
-  // Notify about failed posts
+  // Notify about failed posts (track already notified to avoid loops)
+  const notifiedFailuresRef = useRef(new Set<string>());
   useEffect(() => {
     const failedPosts = posts.filter(p => p.status === 'failed');
     failedPosts.forEach(post => {
-      if (post.error_message) {
+      if (post.error_message && !notifiedFailuresRef.current.has(post.id)) {
+        notifiedFailuresRef.current.add(post.id);
         addNotification({
           type: 'error',
           title: 'Falha na publicação',
