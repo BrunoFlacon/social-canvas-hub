@@ -1,62 +1,82 @@
 
+# Plano: Corrigir Calendario, Analytics, Redes Sociais e Seguranca
 
-# Plano: Finalizar Calendario, Configurar Secrets OAuth e Testar Fluxo Completo
+## Problemas Identificados
 
-## 1. Configurar Secrets OAuth
+### 1. Erros de Ref no Console (forwardRef)
+Os componentes `DocumentsView`, `SocialNetworkCard` e `SettingsView` geram warnings porque sao passados onde refs podem ser atribuidas. O Dashboard usa esses componentes em contextos que tentam atribuir refs a eles.
 
-Os secrets para conexoes OAuth reais ainda nao estao configurados. Sera necessario solicitar ao usuario que forneca:
+### 2. Menu "Redes Sociais" usa estado local, nao conexoes reais
+O menu `networks` no Dashboard (linhas 52-73) usa `connectedPlatforms` como estado local (`useState`) com valores hardcoded `["facebook", "instagram", "linkedin"]`. Os botoes de conectar/desconectar so alteram o estado local, sem integracao real com o OAuth ou o banco de dados. O `SocialNetworkCard` tambem nao dispara OAuth - so inverte o estado local.
 
-- **META_APP_ID** - ID do aplicativo Meta (Facebook/Instagram)
-- **META_APP_SECRET** - Secret do aplicativo Meta
-- **GOOGLE_CLIENT_ID** - ID do cliente Google (YouTube/Google)
-- **GOOGLE_CLIENT_SECRET** - Secret do cliente Google
+### 3. Calendario funcional mas com problemas de estabilidade
+O `CalendarView` esta funcional e ja possui Realtime, filtros e resumo mensal. O problema pode ser o `useEffect` de notificacoes de falhas que roda a cada mudanca de `posts` sem controle, podendo causar loops de re-render.
 
-Esses secrets serao adicionados usando a ferramenta `add_secret` para que as Edge Functions de OAuth possam usa-los.
-
----
-
-## 2. Melhorias no Calendario Editorial
-
-O calendario ja esta funcional mas precisa de algumas melhorias:
-
-### 2.1 Adicionar Realtime ao Calendario
-- Integrar `supabase.channel('scheduled_posts')` no `CalendarView.tsx` para escutar mudancas em tempo real (INSERT, UPDATE, DELETE)
-- Quando um post e criado na aba "Criar Post", o calendario atualiza automaticamente sem refresh
-
-### 2.2 Botao "+" funcional no painel lateral
-- O botao "+" no painel de detalhes do dia selecionado atualmente nao faz nada
-- Fazer ele navegar para a aba "Criar Post" com a data pre-selecionada (passando via estado)
-
-### 2.3 Filtros de status no calendario
-- Adicionar filtros clicaveis na legenda de status (Publicado, Agendado, Rascunho, Falhou) para mostrar/esconder posts por status
-
-### 2.4 Resumo mensal
-- Adicionar contadores no topo: total de posts no mes, agendados, publicados, falhos
+### 4. Analytics usa dados simulados
+O edge function `get-analytics` gera dados de engajamento com `Math.random()`, o que faz os valores mudarem a cada refresh.
 
 ---
 
-## 3. Testar Fluxo Completo
+## Correcoes Planejadas
 
-Apos as implementacoes, testar via browser:
-1. Navegar para `/login` e fazer login
-2. Ir para aba "Criar Post"
-3. Usar "Gerar com IA" para criar conteudo
-4. Agendar para data futura
-5. Verificar se aparece no calendario
+### Passo 1: Integrar menu "Redes Sociais" com OAuth real
+
+**Arquivo: `src/pages/Dashboard.tsx`**
+- Remover o estado local `connectedPlatforms` e `toggleConnection`
+- Importar e usar `useSocialConnections` no Dashboard
+- Passar `initiateOAuth` e `disconnect` para o `SocialNetworkCard`
+- Atualizar o card de "Redes Conectadas" no dashboard principal para mostrar status real
+
+**Arquivo: `src/components/dashboard/SocialNetworkCard.tsx`**
+- Adicionar `React.forwardRef` para corrigir o warning de ref
+- Aceitar props `onConnect` e `onDisconnect` separadas
+- Mostrar estado real de conexao (conectando, conectado, desconectado)
+- Exibir `page_name` quando conectado
+
+### Passo 2: Corrigir warnings de forwardRef
+
+**Arquivos afetados:**
+- `DocumentsView.tsx` - Envolver com `React.forwardRef`
+- `SettingsView.tsx` - Envolver com `React.forwardRef`
+- `SocialNetworkCard.tsx` - Envolver com `React.forwardRef`
+
+### Passo 3: Estabilizar CalendarView
+
+**Arquivo: `src/components/dashboard/CalendarView.tsx`**
+- Adicionar `useRef` para rastrear posts com falha ja notificados, evitando notificacoes duplicadas
+- Estabilizar a referencia de `refetch` com `useCallback` para evitar re-subscricoes desnecessarias do canal Realtime
+
+### Passo 4: Melhorar Analytics
+
+**Arquivo: `supabase/functions/get-analytics/index.ts`**
+- Substituir `Math.random()` por seed deterministica baseada no `user.id` e periodo
+- Manter os calculos de overview (totalPosts, published, etc.) baseados em dados reais
+- Usar hash do userId como seed para gerar dados de engajamento consistentes (mesmos valores para o mesmo periodo)
+
+### Passo 5: Corrigir seguranca restante
+
+- O storage bucket `media` esta publico. Isso e aceitavel para um bucket de midia compartilhavel, mas vou documentar/ignorar a finding
+- As demais findings de seguranca ja foram mitigadas (tokens, JWT validation)
 
 ---
 
 ## Detalhes Tecnicos
 
 ### Arquivos editados:
-- `src/components/dashboard/CalendarView.tsx` - Realtime, filtros, resumo mensal, botao "+" funcional
-- `src/pages/Dashboard.tsx` - Passar callback `setActiveTab` para CalendarView
+- `src/pages/Dashboard.tsx` - Integrar `useSocialConnections`, remover estado local
+- `src/components/dashboard/SocialNetworkCard.tsx` - forwardRef + props de conexao real
+- `src/components/dashboard/DocumentsView.tsx` - forwardRef
+- `src/components/dashboard/SettingsView.tsx` - forwardRef
+- `src/components/dashboard/CalendarView.tsx` - Estabilizar notificacoes de falha
+- `supabase/functions/get-analytics/index.ts` - Dados de engajamento determinísticos
 
-### Secrets solicitados:
-- META_APP_ID, META_APP_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET (via add_secret tool)
+### Edge functions redeployadas:
+- `get-analytics`
 
 ### Ordem de execucao:
-1. Solicitar secrets OAuth ao usuario
-2. Implementar melhorias no CalendarView (realtime, filtros, resumo)
-3. Testar fluxo completo no browser
-
+1. Corrigir forwardRef em DocumentsView, SettingsView, SocialNetworkCard
+2. Integrar SocialNetworkCard com OAuth real via useSocialConnections
+3. Atualizar Dashboard para usar conexoes reais
+4. Estabilizar CalendarView
+5. Melhorar get-analytics com dados determinísticos
+6. Atualizar findings de seguranca
