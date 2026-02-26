@@ -7,6 +7,7 @@ import {
   TrendingUp 
 } from "lucide-react";
 import { useWebPushNotifications } from "@/hooks/useWebPushNotifications";
+import { useSocialConnections } from "@/hooks/useSocialConnections";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { StatsCard } from "@/components/dashboard/StatsCard";
@@ -21,23 +22,28 @@ import { DocumentsView } from "@/components/dashboard/DocumentsView";
 import { SettingsView } from "@/components/dashboard/SettingsView";
 import { MediaGalleryView } from "@/components/dashboard/MediaGalleryView";
 import { NotificationsPanel } from "@/components/dashboard/NotificationsPanel";
-import { socialPlatforms, SocialPlatformId } from "@/components/icons/SocialIcons";
+import { socialPlatforms } from "@/components/icons/SocialIcons";
 import { cn } from "@/lib/utils";
 
 const Dashboard = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [connectedPlatforms, setConnectedPlatforms] = useState<SocialPlatformId[]>([
-    "facebook", "instagram", "linkedin"
-  ]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
 
-  // Initialize realtime push notifications
   useWebPushNotifications();
 
-  const toggleConnection = (id: SocialPlatformId) => {
-    setConnectedPlatforms(prev =>
-      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
-    );
+  const { connections, initiateOAuth, disconnect } = useSocialConnections();
+
+  const isConnected = (platformId: string) =>
+    connections.some(c => c.platform === platformId && c.is_connected);
+
+  const getPageName = (platformId: string) =>
+    connections.find(c => c.platform === platformId && c.is_connected)?.page_name ?? null;
+
+  const handleConnect = async (platformId: string) => {
+    setConnectingPlatform(platformId);
+    await initiateOAuth(platformId);
+    setConnectingPlatform(null);
   };
 
   const renderContent = () => {
@@ -63,8 +69,11 @@ const Dashboard = () => {
                 <SocialNetworkCard
                   key={platform.id}
                   platform={platform}
-                  isConnected={connectedPlatforms.includes(platform.id)}
-                  onToggle={() => toggleConnection(platform.id)}
+                  isConnected={isConnected(platform.id)}
+                  isConnecting={connectingPlatform === platform.id}
+                  pageName={getPageName(platform.id)}
+                  onConnect={() => handleConnect(platform.id)}
+                  onDisconnect={() => disconnect(platform.id)}
                   delay={index * 0.05}
                 />
               ))}
@@ -120,42 +129,10 @@ const Dashboard = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <StatsCard
-                title="Total de Posts"
-                value="248"
-                icon={TrendingUp}
-                trend={12.5}
-                trendLabel="este mês"
-                color="primary"
-                delay={0}
-              />
-              <StatsCard
-                title="Visualizações"
-                value="1.2M"
-                icon={Eye}
-                trend={8.2}
-                trendLabel="vs mês anterior"
-                color="accent"
-                delay={0.1}
-              />
-              <StatsCard
-                title="Engajamento"
-                value="89.5K"
-                icon={Heart}
-                trend={-2.1}
-                trendLabel="vs mês anterior"
-                color="success"
-                delay={0.2}
-              />
-              <StatsCard
-                title="Seguidores"
-                value="52.3K"
-                icon={Users}
-                trend={15.3}
-                trendLabel="este mês"
-                color="warning"
-                delay={0.3}
-              />
+              <StatsCard title="Total de Posts" value="248" icon={TrendingUp} trend={12.5} trendLabel="este mês" color="primary" delay={0} />
+              <StatsCard title="Visualizações" value="1.2M" icon={Eye} trend={8.2} trendLabel="vs mês anterior" color="accent" delay={0.1} />
+              <StatsCard title="Engajamento" value="89.5K" icon={Heart} trend={-2.1} trendLabel="vs mês anterior" color="success" delay={0.2} />
+              <StatsCard title="Seguidores" value="52.3K" icon={Users} trend={15.3} trendLabel="este mês" color="warning" delay={0.3} />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -173,25 +150,19 @@ const Dashboard = () => {
                   <div className="space-y-3">
                     {socialPlatforms.slice(0, 5).map((platform) => {
                       const Icon = platform.icon;
-                      const isConnected = connectedPlatforms.includes(platform.id);
+                      const connected = isConnected(platform.id);
                       return (
                         <div
                           key={platform.id}
                           className="flex items-center justify-between p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors"
                         >
                           <div className="flex items-center gap-3">
-                            <div className={cn(
-                              "w-8 h-8 rounded-lg flex items-center justify-center",
-                              platform.color
-                            )}>
+                            <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", platform.color)}>
                               <Icon className="w-4 h-4 text-white" />
                             </div>
                             <span className="text-sm font-medium">{platform.name}</span>
                           </div>
-                          <div className={cn(
-                            "w-2 h-2 rounded-full",
-                            isConnected ? "bg-green-500" : "bg-muted-foreground"
-                          )} />
+                          <div className={cn("w-2 h-2 rounded-full", connected ? "bg-green-500" : "bg-muted-foreground")} />
                         </div>
                       );
                     })}
