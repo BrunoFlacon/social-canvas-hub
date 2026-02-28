@@ -17,7 +17,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Trash2,
-  Wand2
+  Wand2,
+  ChevronLeft
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -132,12 +133,29 @@ const popularHashtags: Partial<Record<SocialPlatformId, string[]>> = {
   site: ["#website", "#blog", "#content", "#digital", "#online", "#web"],
 };
 
-export const CreatePostPanel = () => {
-  const [content, setContent] = useState("");
-  const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatformId[]>([]);
-  const [selectedMedia, setSelectedMedia] = useState<MediaType | null>(null);
-  const [orientation, setOrientation] = useState<"horizontal" | "vertical">("horizontal");
-  const [scheduledDate, setScheduledDate] = useState<string>("");
+interface CreatePostPanelProps {
+  initialDate?: string;
+  editingPost?: import("@/hooks/useScheduledPosts").ScheduledPost | null;
+  onPostSaved?: () => void;
+  onBackToCalendar?: () => void;
+}
+
+export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackToCalendar }: CreatePostPanelProps) => {
+  const [content, setContent] = useState(editingPost?.content || "");
+  const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatformId[]>(
+    (editingPost?.platforms as SocialPlatformId[]) || []
+  );
+  const [selectedMedia, setSelectedMedia] = useState<MediaType | null>(
+    (editingPost?.media_type as MediaType) || null
+  );
+  const [orientation, setOrientation] = useState<"horizontal" | "vertical">(
+    (editingPost?.orientation as "horizontal" | "vertical") || "horizontal"
+  );
+  const [scheduledDate, setScheduledDate] = useState<string>(
+    editingPost?.scheduled_at
+      ? new Date(editingPost.scheduled_at).toISOString().slice(0, 16)
+      : initialDate || ""
+  );
   const [uploadedFiles, setUploadedFiles] = useState<UploadedMedia[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showHashtags, setShowHashtags] = useState(false);
@@ -149,11 +167,13 @@ export const CreatePostPanel = () => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadMedia, uploading, progress: uploadProgress } = useMediaUpload();
-  const { createPost } = useScheduledPosts();
+  const { createPost, updatePost } = useScheduledPosts();
   const { addNotification } = useNotifications();
   const { toast } = useToast();
   const { generateContent, generating } = useAIContent();
   const { publishNow, publishing } = usePublisher();
+
+  const isEditing = !!editingPost;
 
   const togglePlatform = (id: SocialPlatformId) => {
     setSelectedPlatforms(prev =>
@@ -258,20 +278,11 @@ export const CreatePostPanel = () => {
 
   const handleSubmit = async (asDraft = false) => {
     if (!content.trim()) {
-      toast({
-        title: "Conteúdo obrigatório",
-        description: "Digite o texto do seu post.",
-        variant: "destructive",
-      });
+      toast({ title: "Conteúdo obrigatório", description: "Digite o texto do seu post.", variant: "destructive" });
       return;
     }
-
     if (selectedPlatforms.length === 0) {
-      toast({
-        title: "Selecione plataformas",
-        description: "Escolha pelo menos uma rede social.",
-        variant: "destructive",
-      });
+      toast({ title: "Selecione plataformas", description: "Escolha pelo menos uma rede social.", variant: "destructive" });
       return;
     }
 
@@ -280,51 +291,68 @@ export const CreatePostPanel = () => {
     try {
       const scheduledAt = scheduledDate && !asDraft ? new Date(scheduledDate) : undefined;
       
-      // Validate scheduled date is in the future
       if (scheduledAt && scheduledAt <= new Date()) {
-        toast({
-          title: "Data inválida",
-          description: "A data de agendamento deve ser no futuro.",
-          variant: "destructive",
-        });
+        toast({ title: "Data inválida", description: "A data de agendamento deve ser no futuro.", variant: "destructive" });
         setIsSubmitting(false);
         return;
       }
 
-      const post = await createPost({
-        content: content.trim(),
-        media_ids: uploadedFiles.map(f => f.id),
-        platforms: selectedPlatforms,
-        media_type: selectedMedia || "image",
-        orientation,
-        scheduled_at: scheduledAt,
-      });
-
-      if (post) {
-        // Add notification
-        addNotification({
-          type: "success",
-          title: asDraft ? "Rascunho salvo" : scheduledAt ? "Post agendado" : "Post criado",
-          message: asDraft 
-            ? "Seu rascunho foi salvo com sucesso."
-            : scheduledAt 
-              ? `Seu post será publicado em ${scheduledAt.toLocaleDateString('pt-BR')} às ${scheduledAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
-              : "Seu post foi criado com sucesso.",
-          platform: selectedPlatforms[0],
+      if (isEditing && editingPost) {
+        // Update existing post
+        const success = await updatePost(editingPost.id, {
+          content: content.trim(),
+          media_ids: uploadedFiles.map(f => f.id),
+          platforms: selectedPlatforms,
+          media_type: selectedMedia || "image",
+          orientation,
+          scheduled_at: scheduledAt,
         });
 
-        // Reset form
-        setContent("");
-        setSelectedPlatforms([]);
-        setSelectedMedia(null);
-        setScheduledDate("");
-        setUploadedFiles([]);
+        if (success) {
+          addNotification({
+            type: "success",
+            title: "Post atualizado",
+            message: "As alterações foram salvas com sucesso.",
+            platform: selectedPlatforms[0],
+          });
+          onPostSaved?.();
+        }
+      } else {
+        // Create new post
+        const post = await createPost({
+          content: content.trim(),
+          media_ids: uploadedFiles.map(f => f.id),
+          platforms: selectedPlatforms,
+          media_type: selectedMedia || "image",
+          orientation,
+          scheduled_at: scheduledAt,
+        });
+
+        if (post) {
+          addNotification({
+            type: "success",
+            title: asDraft ? "Rascunho salvo" : scheduledAt ? "Post agendado" : "Post criado",
+            message: asDraft
+              ? "Seu rascunho foi salvo com sucesso."
+              : scheduledAt
+                ? `Seu post será publicado em ${scheduledAt.toLocaleDateString('pt-BR')} às ${scheduledAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                : "Seu post foi criado com sucesso.",
+            platform: selectedPlatforms[0],
+          });
+
+          setContent("");
+          setSelectedPlatforms([]);
+          setSelectedMedia(null);
+          setScheduledDate("");
+          setUploadedFiles([]);
+          onPostSaved?.();
+        }
       }
     } catch (error) {
-      console.error("Error creating post:", error);
+      console.error("Error saving post:", error);
       addNotification({
         type: "error",
-        title: "Erro ao criar post",
+        title: "Erro ao salvar post",
         message: "Não foi possível salvar o post. Verifique sua conexão e tente novamente.",
       });
     } finally {
@@ -363,17 +391,34 @@ export const CreatePostPanel = () => {
       <div className="p-6 border-b border-border">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
+            {onBackToCalendar && (
+              <button
+                onClick={onBackToCalendar}
+                className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            )}
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
               <Sparkles className="w-5 h-5 text-primary-foreground" />
             </div>
             <div>
-              <h2 className="font-display font-bold text-xl">Criar Publicação</h2>
+              <h2 className="font-display font-bold text-xl">
+                {isEditing ? "Editar Publicação" : "Criar Publicação"}
+              </h2>
               <p className="text-sm text-muted-foreground">
-                Publique em múltiplas redes simultaneamente
+                {isEditing
+                  ? "Edite o conteúdo e republique ou reagende"
+                  : "Publique em múltiplas redes simultaneamente"}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {isEditing && (
+              <span className="text-xs px-2 py-1 rounded-full bg-accent/10 text-accent font-medium">
+                Editando pauta
+              </span>
+            )}
             <span className={cn(
               "text-sm font-medium",
               characterCount > maxCharacters ? "text-destructive" : "text-muted-foreground"
@@ -880,7 +925,7 @@ export const CreatePostPanel = () => {
               ) : (
                 <Send className="w-4 h-4" />
               )}
-              {scheduledDate ? "Agendar" : "Salvar Post"}
+              {isEditing ? "Atualizar Post" : scheduledDate ? "Agendar" : "Salvar Post"}
             </Button>
           </div>
         </div>
