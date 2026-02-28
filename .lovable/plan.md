@@ -1,82 +1,101 @@
+# Plano: Conectar Calendario Editorial ao Fluxo de Criacao de Conteudo
 
-# Plano: Corrigir Calendario, Analytics, Redes Sociais e Seguranca
+## Problema Atual
 
-## Problemas Identificados
+O calendario e o painel de criacao de posts funcionam de forma isolada. Quando o usuario agenda uma pauta no calendario, nao consegue abrir essa pauta no painel de criacao para desenvolver o conteudo e publicar. O botao "+" no calendario navega para a aba "Criar Post" mas sem passar a data selecionada. Nao existe opcao de editar posts existentes a partir do calendario.
 
-### 1. Erros de Ref no Console (forwardRef)
-Os componentes `DocumentsView`, `SocialNetworkCard` e `SettingsView` geram warnings porque sao passados onde refs podem ser atribuidas. O Dashboard usa esses componentes em contextos que tentam atribuir refs a eles.
+## Solucao
 
-### 2. Menu "Redes Sociais" usa estado local, nao conexoes reais
-O menu `networks` no Dashboard (linhas 52-73) usa `connectedPlatforms` como estado local (`useState`) com valores hardcoded `["facebook", "instagram", "linkedin"]`. Os botoes de conectar/desconectar so alteram o estado local, sem integracao real com o OAuth ou o banco de dados. O `SocialNetworkCard` tambem nao dispara OAuth - so inverte o estado local.
+Criar um fluxo continuo: **Calendario -> Criar/Editar Post -> Publicar**, onde pautas agendadas podem ser abertas no painel de criacao para desenvolvimento rapido do conteudo.
 
-### 3. Calendario funcional mas com problemas de estabilidade
-O `CalendarView` esta funcional e ja possui Realtime, filtros e resumo mensal. O problema pode ser o `useEffect` de notificacoes de falhas que roda a cada mudanca de `posts` sem controle, podendo causar loops de re-render.
-
-### 4. Analytics usa dados simulados
-O edge function `get-analytics` gera dados de engajamento com `Math.random()`, o que faz os valores mudarem a cada refresh.
+Cria a pauta o usuário jornalista desenvolve o conteudo da pauta e o editor aprova ou corrige a matéria ou a publicação da pauta e o autor ou editor publica. o calendário aparece todas as publicações tanto para aprovar a publicação, editar, rascunhar e publicar. o calendário mostrará a data e todos os estados de uma matéria nos quadradinhos do dia que foram criados
 
 ---
 
-## Correcoes Planejadas
+## Passo 1: Adicionar estado compartilhado no Dashboard
 
-### Passo 1: Integrar menu "Redes Sociais" com OAuth real
+**Arquivo: `src/pages/Dashboard.tsx**`
 
-**Arquivo: `src/pages/Dashboard.tsx`**
-- Remover o estado local `connectedPlatforms` e `toggleConnection`
-- Importar e usar `useSocialConnections` no Dashboard
-- Passar `initiateOAuth` e `disconnect` para o `SocialNetworkCard`
-- Atualizar o card de "Redes Conectadas" no dashboard principal para mostrar status real
+Adicionar dois estados novos:
 
-**Arquivo: `src/components/dashboard/SocialNetworkCard.tsx`**
-- Adicionar `React.forwardRef` para corrigir o warning de ref
-- Aceitar props `onConnect` e `onDisconnect` separadas
-- Mostrar estado real de conexao (conectando, conectado, desconectado)
-- Exibir `page_name` quando conectado
+- `preSelectedDate: Date | null` - data pre-selecionada ao clicar "+" no calendario
+- `editingPost: ScheduledPost | null` - post existente sendo editado
 
-### Passo 2: Corrigir warnings de forwardRef
+Atualizar o callback `onCreatePost` do CalendarView para aceitar tanto data quanto post:
 
-**Arquivos afetados:**
-- `DocumentsView.tsx` - Envolver com `React.forwardRef`
-- `SettingsView.tsx` - Envolver com `React.forwardRef`
-- `SocialNetworkCard.tsx` - Envolver com `React.forwardRef`
+- `onCreatePost(date)` - cria novo post com data pre-selecionada
+- `onEditPost(post)` - abre post existente para edicao
 
-### Passo 3: Estabilizar CalendarView
+Ao navegar para a aba "create", passar `preSelectedDate` e `editingPost` como props.
 
-**Arquivo: `src/components/dashboard/CalendarView.tsx`**
-- Adicionar `useRef` para rastrear posts com falha ja notificados, evitando notificacoes duplicadas
-- Estabilizar a referencia de `refetch` com `useCallback` para evitar re-subscricoes desnecessarias do canal Realtime
+## Passo 2: Adicionar botao "Editar" no CalendarView
 
-### Passo 4: Melhorar Analytics
+**Arquivo: `src/components/dashboard/CalendarView.tsx**`
 
-**Arquivo: `supabase/functions/get-analytics/index.ts`**
-- Substituir `Math.random()` por seed deterministica baseada no `user.id` e periodo
-- Manter os calculos de overview (totalPosts, published, etc.) baseados em dados reais
-- Usar hash do userId como seed para gerar dados de engajamento consistentes (mesmos valores para o mesmo periodo)
+No dropdown de acoes de cada post (linhas 395-409), adicionar um item "Editar conteudo" que chama um novo callback `onEditPost(post)`:
 
-### Passo 5: Corrigir seguranca restante
+- Clicar em "Editar conteudo" navega para aba "Criar Post" com o post carregado
+- O botao "+" continua criando novo post com a data pre-selecionada
 
-- O storage bucket `media` esta publico. Isso e aceitavel para um bucket de midia compartilhavel, mas vou documentar/ignorar a finding
-- As demais findings de seguranca ja foram mitigadas (tokens, JWT validation)
+Atualizar a interface `CalendarViewProps`:
+
+```text
+interface CalendarViewProps {
+  onCreatePost?: (preSelectedDate?: Date) => void;
+  onEditPost?: (post: ScheduledPost) => void;
+}
+```
+
+## Passo 3: Atualizar CreatePostPanel para aceitar props de edicao
+
+**Arquivo: `src/components/dashboard/CreatePostPanel.tsx**`
+
+Adicionar props opcionais:
+
+- `initialDate?: string` - data pre-preenchida no campo de agendamento
+- `editingPost?: ScheduledPost` - post sendo editado (preenche todos os campos)
+- `onPostSaved?: () => void` - callback apos salvar/atualizar
+
+Quando `editingPost` e fornecido:
+
+- Preencher automaticamente: content, selectedPlatforms, scheduledDate, mediaType, orientation
+- Alterar o titulo de "Criar Publicacao" para "Editar Publicacao"
+- O botao "Agendar" muda para "Atualizar Post"
+- Usar `updatePost()` em vez de `createPost()` ao salvar
+- Mostrar badge "Editando pauta do calendario" para contexto
+
+Quando `initialDate` e fornecido:
+
+- Preencher o campo datetime-local com a data
+
+## Passo 4: Fluxo rapido de publicacao no calendario
+
+**Arquivo: `src/components/dashboard/CalendarView.tsx**`
+
+Adicionar botao "Publicar agora" no dropdown de acoes para posts com status "scheduled" ou "draft":
+
+- Chama a edge function `publish-post` diretamente
+- Mostra feedback de sucesso/erro
+- Atualiza o calendario via Realtime
+
+## Passo 5: Botao "Voltar ao Calendario" no CreatePostPanel
+
+Quando o usuario esta editando um post vindo do calendario, mostrar um botao "Voltar ao Calendario" no topo do painel para navegacao rapida.
 
 ---
 
 ## Detalhes Tecnicos
 
 ### Arquivos editados:
-- `src/pages/Dashboard.tsx` - Integrar `useSocialConnections`, remover estado local
-- `src/components/dashboard/SocialNetworkCard.tsx` - forwardRef + props de conexao real
-- `src/components/dashboard/DocumentsView.tsx` - forwardRef
-- `src/components/dashboard/SettingsView.tsx` - forwardRef
-- `src/components/dashboard/CalendarView.tsx` - Estabilizar notificacoes de falha
-- `supabase/functions/get-analytics/index.ts` - Dados de engajamento determinísticos
 
-### Edge functions redeployadas:
-- `get-analytics`
+- `src/pages/Dashboard.tsx` - Estado compartilhado (preSelectedDate, editingPost), callbacks
+- `src/components/dashboard/CalendarView.tsx` - Botao "Editar", "Publicar agora", prop onEditPost
+- `src/components/dashboard/CreatePostPanel.tsx` - Props de edicao, pre-preenchimento, updatePost
 
-### Ordem de execucao:
-1. Corrigir forwardRef em DocumentsView, SettingsView, SocialNetworkCard
-2. Integrar SocialNetworkCard com OAuth real via useSocialConnections
-3. Atualizar Dashboard para usar conexoes reais
-4. Estabilizar CalendarView
-5. Melhorar get-analytics com dados determinísticos
-6. Atualizar findings de seguranca
+### Fluxo do usuario:
+
+1. Abre Calendario -> ve pautas agendadas
+2. Clica "Editar conteudo" em uma pauta -> abre CreatePostPanel com dados preenchidos
+3. Desenvolve conteudo, usa IA, adiciona hashtags
+4. Clica "Atualizar Post" ou "Publicar Agora"
+5. Volta ao calendario e ve o status atualizado em tempo real
