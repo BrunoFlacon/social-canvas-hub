@@ -13,12 +13,14 @@ import {
   Edit,
   Eye,
   Filter,
-  BarChart3
+  BarChart3,
+  Send
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { socialPlatforms } from "@/components/icons/SocialIcons";
 import { useScheduledPosts, ScheduledPost } from "@/hooks/useScheduledPosts";
 import { useNotifications } from "@/contexts/NotificationContext";
+import { usePublisher } from "@/hooks/usePublisher";
 import { supabase } from "@/integrations/supabase/client";
 import {
   DropdownMenu,
@@ -88,6 +90,7 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
 
   const { posts, loading, deletePost, refetch } = useScheduledPosts();
   const { addNotification } = useNotifications();
+  const { publishNow, publishing } = usePublisher();
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -198,6 +201,15 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
     const success = await deletePost(postId);
     if (success) {
       addNotification({ type: 'success', title: 'Post excluído', message: 'O post foi removido com sucesso.' });
+    }
+  };
+
+  const handlePublishNow = async (post: ScheduledPost) => {
+    const mediaUrls: string[] = []; // TODO: resolve media URLs from media_ids if needed
+    const result = await publishNow(post.content, post.platforms, mediaUrls);
+    if (result) {
+      addNotification({ type: 'success', title: 'Publicado!', message: 'O post foi publicado com sucesso.', platform: post.platforms[0] });
+      refetch();
     }
   };
 
@@ -408,6 +420,11 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
                                 <Edit className="w-4 h-4 mr-2" /> Editar conteúdo
                               </DropdownMenuItem>
                             )}
+                            {(post.status === 'draft' || post.status === 'scheduled') && (
+                              <DropdownMenuItem onClick={() => handlePublishNow(post)} disabled={publishing}>
+                                <Send className="w-4 h-4 mr-2" /> Publicar agora
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem onClick={() => handleDeletePost(post.id)} className="text-destructive focus:text-destructive">
                               <Trash2 className="w-4 h-4 mr-2" /> Excluir
                             </DropdownMenuItem>
@@ -497,6 +514,16 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
               )}
               <div className="flex gap-3 pt-4">
                 <Button variant="outline" className="flex-1" onClick={() => setShowPostDetails(false)}>Fechar</Button>
+                {onEditPost && (
+                  <Button variant="secondary" onClick={() => { onEditPost(selectedPost); setShowPostDetails(false); }}>
+                    <Edit className="w-4 h-4 mr-2" /> Editar
+                  </Button>
+                )}
+                {(selectedPost.status === 'draft' || selectedPost.status === 'scheduled') && (
+                  <Button onClick={() => { handlePublishNow(selectedPost); setShowPostDetails(false); }} disabled={publishing}>
+                    <Send className="w-4 h-4 mr-2" /> Publicar
+                  </Button>
+                )}
                 <Button variant="destructive" onClick={() => { handleDeletePost(selectedPost.id); setShowPostDetails(false); }}>
                   <Trash2 className="w-4 h-4 mr-2" /> Excluir
                 </Button>
