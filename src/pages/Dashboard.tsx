@@ -24,11 +24,14 @@ import { MediaGalleryView } from "@/components/dashboard/MediaGalleryView";
 import { NotificationsPanel } from "@/components/dashboard/NotificationsPanel";
 import { socialPlatforms } from "@/components/icons/SocialIcons";
 import { cn } from "@/lib/utils";
+import { ScheduledPost } from "@/hooks/useScheduledPosts";
 
 const Dashboard = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [showNotifications, setShowNotifications] = useState(false);
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
+  const [preSelectedDate, setPreSelectedDate] = useState<Date | null>(null);
+  const [editingPost, setEditingPost] = useState<ScheduledPost | null>(null);
 
   useWebPushNotifications();
 
@@ -51,7 +54,19 @@ const Dashboard = () => {
       case "create":
         return (
           <div className="max-w-4xl mx-auto">
-            <CreatePostPanel />
+            <CreatePostPanel
+              initialDate={preSelectedDate ? preSelectedDate.toISOString().slice(0, 16) : undefined}
+              editingPost={editingPost}
+              onPostSaved={() => {
+                setEditingPost(null);
+                setPreSelectedDate(null);
+              }}
+              onBackToCalendar={editingPost || preSelectedDate ? () => {
+                setEditingPost(null);
+                setPreSelectedDate(null);
+                setActiveTab("calendar");
+              } : undefined}
+            />
           </div>
         );
 
@@ -85,7 +100,20 @@ const Dashboard = () => {
         return <AdvancedAnalytics />;
 
       case "calendar":
-        return <CalendarView onCreatePost={() => setActiveTab("create")} />;
+        return (
+          <CalendarView
+            onCreatePost={(date?: Date) => {
+              setEditingPost(null);
+              setPreSelectedDate(date || null);
+              setActiveTab("create");
+            }}
+            onEditPost={(post: ScheduledPost) => {
+              setEditingPost(post);
+              setPreSelectedDate(null);
+              setActiveTab("create");
+            }}
+          />
+        );
 
       case "stories":
         return <StoriesLivesView />;

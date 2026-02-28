@@ -76,9 +76,10 @@ type StatusKey = keyof typeof statusConfig;
 
 interface CalendarViewProps {
   onCreatePost?: (preSelectedDate?: Date) => void;
+  onEditPost?: (post: ScheduledPost) => void;
 }
 
-export const CalendarView = ({ onCreatePost }: CalendarViewProps) => {
+export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedPost, setSelectedPost] = useState<ScheduledPost | null>(null);
@@ -402,6 +403,11 @@ export const CalendarView = ({ onCreatePost }: CalendarViewProps) => {
                             <DropdownMenuItem onClick={() => viewPostDetails(post)}>
                               <Eye className="w-4 h-4 mr-2" /> Ver detalhes
                             </DropdownMenuItem>
+                            {onEditPost && (
+                              <DropdownMenuItem onClick={() => onEditPost(post)}>
+                                <Edit className="w-4 h-4 mr-2" /> Editar conteúdo
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem onClick={() => handleDeletePost(post.id)} className="text-destructive focus:text-destructive">
                               <Trash2 className="w-4 h-4 mr-2" /> Excluir
                             </DropdownMenuItem>
