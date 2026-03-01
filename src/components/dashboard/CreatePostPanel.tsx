@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { socialPlatforms, SocialPlatformId } from "@/components/icons/SocialIcons";
 import { useMediaUpload, type UploadedMedia } from "@/hooks/useMediaUpload";
 import { BulkUploadDialog } from "@/components/dashboard/BulkUploadDialog";
-import { useScheduledPosts } from "@/hooks/useScheduledPosts";
+import { useScheduledPosts, ScheduledPost } from "@/hooks/useScheduledPosts";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAIContent } from "@/hooks/useAIContent";
@@ -135,7 +135,7 @@ const popularHashtags: Partial<Record<SocialPlatformId, string[]>> = {
 
 interface CreatePostPanelProps {
   initialDate?: string;
-  editingPost?: import("@/hooks/useScheduledPosts").ScheduledPost | null;
+  editingPost?: ScheduledPost | null;
   onPostSaved?: () => void;
   onBackToCalendar?: () => void;
 }
@@ -167,7 +167,7 @@ export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackT
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadMedia, uploading, progress: uploadProgress } = useMediaUpload();
-  const { createPost, updatePost } = useScheduledPosts();
+  const { createPost, updatePost, submitForApproval } = useScheduledPosts();
   const { addNotification } = useNotifications();
   const { toast } = useToast();
   const { generateContent, generating } = useAIContent();
@@ -877,7 +877,7 @@ export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackT
               Importar CSV
             </Button>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <Button 
               variant="outline" 
               className="border-border"
@@ -886,6 +886,50 @@ export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackT
             >
               {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               Salvar Rascunho
+            </Button>
+            {/* Submit for approval - for drafts or when editing */}
+            <Button
+              variant="outline"
+              className="border-orange-500/50 text-orange-600 hover:bg-orange-500/10"
+              disabled={isSubmitting || publishing || !content.trim() || selectedPlatforms.length === 0}
+              onClick={async () => {
+                // If editing, update first then submit for approval
+                if (isEditing && editingPost) {
+                  const success = await updatePost(editingPost.id, {
+                    content: content.trim(),
+                    media_ids: uploadedFiles.map(f => f.id),
+                    platforms: selectedPlatforms,
+                    media_type: selectedMedia || "image",
+                    orientation,
+                    scheduled_at: scheduledDate ? new Date(scheduledDate) : undefined,
+                  });
+                  if (success) {
+                    await submitForApproval(editingPost.id);
+                    onPostSaved?.();
+                  }
+                } else {
+                  // Create as draft first, then submit
+                  const post = await createPost({
+                    content: content.trim(),
+                    media_ids: uploadedFiles.map(f => f.id),
+                    platforms: selectedPlatforms,
+                    media_type: selectedMedia || "image",
+                    orientation,
+                  });
+                  if (post) {
+                    await submitForApproval(post.id);
+                    setContent("");
+                    setSelectedPlatforms([]);
+                    setSelectedMedia(null);
+                    setScheduledDate("");
+                    setUploadedFiles([]);
+                    onPostSaved?.();
+                  }
+                }
+              }}
+            >
+              <Send className="w-4 h-4 mr-1" />
+              Enviar para Aprovação
             </Button>
             {!scheduledDate && (
               <Button 
