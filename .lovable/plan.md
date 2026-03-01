@@ -1,86 +1,63 @@
-# Plano: Conectar Calendario Editorial ao Fluxo de Criacao de Conteudo
+# Plano: Fluxo de Aprovacao Editorial + Indicadores Visuais no Calendario
 
-## Problema Atual
+## O que sera feito
 
-O calendario e o painel de criacao de posts funcionam de forma isolada. Quando o usuario agenda uma pauta no calendario, nao consegue abrir essa pauta no painel de criacao para desenvolver o conteudo e publicar. O botao "+" no calendario navega para a aba "Criar Post" mas sem passar a data selecionada. Nao existe opcao de editar posts existentes a partir do calendario.
+continue a geração da instrução anterior e implemente o plano a seguir
 
-## Solucao
+### 1. Novo status "pending_approval" no fluxo editorial
 
-Criar um fluxo continuo: **Calendario -> Criar/Editar Post -> Publicar**, onde pautas agendadas podem ser abertas no painel de criacao para desenvolvimento rapido do conteudo.
+Adicionar um novo status ao fluxo de publicacoes para suportar o ciclo jornalistico: **Rascunho -> Aguardando Aprovacao -> Aprovado/Agendado -> Publicado**.
 
-Cria a pauta o usuário jornalista desenvolve o conteudo da pauta e o editor aprova ou corrige a matéria ou a publicação da pauta e o autor ou editor publica. o calendário aparece todas as publicações tanto para aprovar a publicação, editar, rascunhar e publicar. o calendário mostrará a data e todos os estados de uma matéria nos quadradinhos do dia que foram criados
+**Migracao de banco de dados:**
 
----
+- Nenhuma alteracao de schema necessaria: o campo `status` da tabela `scheduled_posts` ja e do tipo `text`, entao novos valores como `pending_approval` e `rejected` podem ser usados diretamente.
 
-## Passo 1: Adicionar estado compartilhado no Dashboard
+**Arquivo: `src/hooks/useScheduledPosts.ts**`
 
-**Arquivo: `src/pages/Dashboard.tsx**`
+- Expandir o tipo `status` para incluir `'pending_approval' | 'rejected'`
+- Adicionar funcoes `submitForApproval(postId)` e `approvePost(postId)` / `rejectPost(postId, reason)`
 
-Adicionar dois estados novos:
-
-- `preSelectedDate: Date | null` - data pre-selecionada ao clicar "+" no calendario
-- `editingPost: ScheduledPost | null` - post existente sendo editado
-
-Atualizar o callback `onCreatePost` do CalendarView para aceitar tanto data quanto post:
-
-- `onCreatePost(date)` - cria novo post com data pre-selecionada
-- `onEditPost(post)` - abre post existente para edicao
-
-Ao navegar para a aba "create", passar `preSelectedDate` e `editingPost` como props.
-
-## Passo 2: Adicionar botao "Editar" no CalendarView
+### 2. Atualizar statusConfig no CalendarView
 
 **Arquivo: `src/components/dashboard/CalendarView.tsx**`
 
-No dropdown de acoes de cada post (linhas 395-409), adicionar um item "Editar conteudo" que chama um novo callback `onEditPost(post)`:
+Adicionar configs para os novos status:
 
-- Clicar em "Editar conteudo" navega para aba "Criar Post" com o post carregado
-- O botao "+" continua criando novo post com a data pre-selecionada
+- `pending_approval`: icone `Clock` com cor laranja, label "Aguardando Aprovacao"
+- `rejected`: icone `AlertCircle` com cor vermelha escura, label "Rejeitado"
 
-Atualizar a interface `CalendarViewProps`:
+Adicionar acoes no dropdown de cada post:
 
-```text
-interface CalendarViewProps {
-  onCreatePost?: (preSelectedDate?: Date) => void;
-  onEditPost?: (post: ScheduledPost) => void;
-}
-```
+- "Enviar para aprovacao" (quando status e `draft`)
+- "Aprovar" e "Rejeitar" (quando status e `pending_approval`)
 
-## Passo 3: Atualizar CreatePostPanel para aceitar props de edicao
+### 3. Indicadores visuais ricos nos quadradinhos do calendario
+
+**Arquivo: `src/components/dashboard/CalendarView.tsx**`
+
+Substituir os pontos coloridos simples por mini-icones de status nos quadradinhos dos dias:
+
+- Cada post mostrara um pequeno icone (CheckCircle2, Clock, Edit, AlertCircle, etc.) colorido dentro do quadradinho do dia
+- Agrupar por status quando houver muitos posts (ex: "2x publicado, 1x rascunho")
+- Mostrar contagem total quando houver mais de 4 posts no dia
+
+### 4. Painel de aprovacao no CreatePostPanel
 
 **Arquivo: `src/components/dashboard/CreatePostPanel.tsx**`
 
-Adicionar props opcionais:
+- Adicionar botao "Enviar para Aprovacao" ao lado de "Salvar Rascunho"
+- Quando o post estiver com status `pending_approval`, mostrar botoes "Aprovar" e "Rejeitar" (simulando o papel do editor)
+- Campo de motivo de rejeicao ao rejeitar
 
-- `initialDate?: string` - data pre-preenchida no campo de agendamento
-- `editingPost?: ScheduledPost` - post sendo editado (preenche todos os campos)
-- `onPostSaved?: () => void` - callback apos salvar/atualizar
-
-Quando `editingPost` e fornecido:
-
-- Preencher automaticamente: content, selectedPlatforms, scheduledDate, mediaType, orientation
-- Alterar o titulo de "Criar Publicacao" para "Editar Publicacao"
-- O botao "Agendar" muda para "Atualizar Post"
-- Usar `updatePost()` em vez de `createPost()` ao salvar
-- Mostrar badge "Editando pauta do calendario" para contexto
-
-Quando `initialDate` e fornecido:
-
-- Preencher o campo datetime-local com a data
-
-## Passo 4: Fluxo rapido de publicacao no calendario
+### 5. Acoes de aprovacao no dialogo de detalhes
 
 **Arquivo: `src/components/dashboard/CalendarView.tsx**`
 
-Adicionar botao "Publicar agora" no dropdown de acoes para posts com status "scheduled" ou "draft":
+No dialogo de detalhes do post, adicionar botoes contextuais:
 
-- Chama a edge function `publish-post` diretamente
-- Mostra feedback de sucesso/erro
-- Atualiza o calendario via Realtime
-
-## Passo 5: Botao "Voltar ao Calendario" no CreatePostPanel
-
-Quando o usuario esta editando um post vindo do calendario, mostrar um botao "Voltar ao Calendario" no topo do painel para navegacao rapida.
+- Post `draft`: "Enviar para Aprovacao"
+- Post `pending_approval`: "Aprovar" e "Rejeitar"
+- Post `rejected`: Mostrar motivo da rejeicao + "Editar e Reenviar"
 
 ---
 
@@ -88,14 +65,22 @@ Quando o usuario esta editando um post vindo do calendario, mostrar um botao "Vo
 
 ### Arquivos editados:
 
-- `src/pages/Dashboard.tsx` - Estado compartilhado (preSelectedDate, editingPost), callbacks
-- `src/components/dashboard/CalendarView.tsx` - Botao "Editar", "Publicar agora", prop onEditPost
-- `src/components/dashboard/CreatePostPanel.tsx` - Props de edicao, pre-preenchimento, updatePost
+- `src/hooks/useScheduledPosts.ts` - Novos status e funcoes (submitForApproval, approvePost, rejectPost)
+- `src/components/dashboard/CalendarView.tsx` - Novos status no statusConfig, icones ricos nos dias, acoes de aprovacao
+- `src/components/dashboard/CreatePostPanel.tsx` - Botao "Enviar para Aprovacao"
 
-### Fluxo do usuario:
+### Fluxo editorial completo:
 
-1. Abre Calendario -> ve pautas agendadas
-2. Clica "Editar conteudo" em uma pauta -> abre CreatePostPanel com dados preenchidos
-3. Desenvolve conteudo, usa IA, adiciona hashtags
-4. Clica "Atualizar Post" ou "Publicar Agora"
-5. Volta ao calendario e ve o status atualizado em tempo real
+1. Jornalista cria pauta (rascunho) no calendario
+2. Desenvolve conteudo no painel de criacao
+3. Clica "Enviar para Aprovacao"
+4. Editor ve posts com status "Aguardando Aprovacao" no calendario (icone laranja)
+5. Editor aprova (muda para "scheduled") ou rejeita (muda para "rejected" com motivo)
+6. Se rejeitado, jornalista edita e reenvia
+7. Se aprovado, pode publicar imediatamente ou aguardar agendamento
+
+### Indicadores visuais nos quadradinhos:
+
+- Cada dia mostrara ate 4 mini-icones coloridos representando os posts daquele dia
+- Se houver mais de 4 posts, mostra 3 icones + badge "+N"
+- Icones usados: CheckCircle2 (publicado/verde), Clock (agendado/azul), Edit (rascunho/amarelo), AlertCircle (falha/vermelho), Loader2 (aguardando aprovacao/laranja), X (rejeitado/vermelho escuro)
