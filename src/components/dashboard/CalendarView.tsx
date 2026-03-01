@@ -14,7 +14,10 @@ import {
   Eye,
   Filter,
   BarChart3,
-  Send
+  Send,
+  XCircle,
+  ShieldCheck,
+  ShieldX
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { socialPlatforms } from "@/components/icons/SocialIcons";
@@ -27,6 +30,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
@@ -34,8 +38,10 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 const daysOfWeek = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const months = [
@@ -65,6 +71,20 @@ const statusConfig = {
     bg: "bg-yellow-500/10",
     dot: "bg-yellow-500"
   },
+  pending_approval: {
+    icon: Loader2,
+    label: "Aguardando Aprovação",
+    color: "text-orange-500",
+    bg: "bg-orange-500/10",
+    dot: "bg-orange-500"
+  },
+  rejected: {
+    icon: XCircle,
+    label: "Rejeitado",
+    color: "text-red-700",
+    bg: "bg-red-700/10",
+    dot: "bg-red-700"
+  },
   failed: {
     icon: AlertCircle,
     label: "Falhou",
@@ -86,9 +106,12 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedPost, setSelectedPost] = useState<ScheduledPost | null>(null);
   const [showPostDetails, setShowPostDetails] = useState(false);
-  const [activeFilters, setActiveFilters] = useState<Set<StatusKey>>(new Set(["published", "scheduled", "draft", "failed"]));
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectingPostId, setRejectingPostId] = useState<string | null>(null);
+  const [activeFilters, setActiveFilters] = useState<Set<StatusKey>>(new Set(["published", "scheduled", "draft", "failed", "pending_approval", "rejected"]));
 
-  const { posts, loading, deletePost, refetch } = useScheduledPosts();
+  const { posts, loading, deletePost, submitForApproval, approvePost, rejectPost, refetch } = useScheduledPosts();
   const { addNotification } = useNotifications();
   const { publishNow, publishing } = usePublisher();
 
@@ -105,18 +128,13 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'scheduled_posts' },
-        () => {
-          refetch();
-        }
+        () => { refetch(); }
       )
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [refetch]);
 
-  // Notify about failed posts (track already notified to avoid loops)
+  // Notify about failed posts
   const notifiedFailuresRef = useRef(new Set<string>());
   useEffect(() => {
     const failedPosts = posts.filter(p => p.status === 'failed');
@@ -153,13 +171,11 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
     });
   };
 
-  // Filter posts by active status filters
   const filteredPosts = useMemo(() => 
     posts.filter(p => activeFilters.has(p.status as StatusKey)),
     [posts, activeFilters]
   );
 
-  // Monthly summary
   const monthlySummary = useMemo(() => {
     const monthPosts = posts.filter(post => {
       const postDate = post.scheduled_at ? new Date(post.scheduled_at) : post.published_at ? new Date(post.published_at) : new Date(post.created_at);
@@ -170,11 +186,12 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
       published: monthPosts.filter(p => p.status === 'published').length,
       scheduled: monthPosts.filter(p => p.status === 'scheduled').length,
       draft: monthPosts.filter(p => p.status === 'draft').length,
+      pending_approval: monthPosts.filter(p => p.status === 'pending_approval').length,
+      rejected: monthPosts.filter(p => p.status === 'rejected').length,
       failed: monthPosts.filter(p => p.status === 'failed').length,
     };
   }, [posts, month, year]);
 
-  // Group filtered posts by day
   const postsByDay = useMemo(() => {
     const grouped: Record<number, ScheduledPost[]> = {};
     filteredPosts.forEach(post => {
@@ -205,12 +222,43 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
   };
 
   const handlePublishNow = async (post: ScheduledPost) => {
-    const mediaUrls: string[] = []; // TODO: resolve media URLs from media_ids if needed
+    const mediaUrls: string[] = [];
     const result = await publishNow(post.content, post.platforms, mediaUrls);
     if (result) {
       addNotification({ type: 'success', title: 'Publicado!', message: 'O post foi publicado com sucesso.', platform: post.platforms[0] });
       refetch();
     }
+  };
+
+  const handleSubmitForApproval = async (postId: string) => {
+    const success = await submitForApproval(postId);
+    if (success) {
+      addNotification({ type: 'success', title: 'Enviado para aprovação', message: 'O post aguarda revisão.' });
+    }
+  };
+
+  const handleApprovePost = async (postId: string) => {
+    const success = await approvePost(postId);
+    if (success) {
+      addNotification({ type: 'success', title: 'Post aprovado!', message: 'O post foi aprovado e agendado.' });
+    }
+  };
+
+  const handleOpenRejectDialog = (postId: string) => {
+    setRejectingPostId(postId);
+    setRejectReason("");
+    setShowRejectDialog(true);
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectingPostId || !rejectReason.trim()) return;
+    const success = await rejectPost(rejectingPostId, rejectReason.trim());
+    if (success) {
+      addNotification({ type: 'warning', title: 'Post rejeitado', message: 'O post foi devolvido para revisão.' });
+    }
+    setShowRejectDialog(false);
+    setRejectingPostId(null);
+    setRejectReason("");
   };
 
   const viewPostDetails = (post: ScheduledPost) => { setSelectedPost(post); setShowPostDetails(true); };
@@ -229,6 +277,34 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
     }
   };
 
+  // Render rich status icons for day cells
+  const renderDayIndicators = (dayPosts: ScheduledPost[]) => {
+    if (dayPosts.length === 0) return null;
+
+    const maxIcons = 4;
+    const showPosts = dayPosts.slice(0, dayPosts.length > maxIcons ? maxIcons - 1 : maxIcons);
+    const remaining = dayPosts.length - showPosts.length;
+
+    return (
+      <div className="absolute bottom-1 left-1 right-1 flex items-center justify-center gap-0.5 flex-wrap">
+        {showPosts.map((post, i) => {
+          const config = statusConfig[post.status as StatusKey];
+          if (!config) return null;
+          const Icon = config.icon;
+          return (
+            <Icon
+              key={i}
+              className={cn("w-3 h-3", config.color)}
+            />
+          );
+        })}
+        {remaining > 0 && (
+          <span className="text-[8px] font-bold text-muted-foreground">+{remaining}</span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
       <div className="mb-6">
@@ -237,12 +313,14 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
       </div>
 
       {/* Monthly Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
         {[
           { label: "Total", value: monthlySummary.total, icon: BarChart3, colorClass: "text-foreground" },
           { label: "Publicados", value: monthlySummary.published, icon: CheckCircle2, colorClass: "text-green-500" },
           { label: "Agendados", value: monthlySummary.scheduled, icon: Clock, colorClass: "text-blue-500" },
           { label: "Rascunhos", value: monthlySummary.draft, icon: Edit, colorClass: "text-yellow-500" },
+          { label: "Aprovação", value: monthlySummary.pending_approval, icon: Loader2, colorClass: "text-orange-500" },
+          { label: "Rejeitados", value: monthlySummary.rejected, icon: XCircle, colorClass: "text-red-700" },
           { label: "Falhas", value: monthlySummary.failed, icon: AlertCircle, colorClass: "text-red-500" },
         ].map((item) => {
           const Icon = item.icon;
@@ -251,12 +329,12 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
               key={item.label}
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="glass-card rounded-xl border border-border p-4 flex items-center gap-3"
+              className="glass-card rounded-xl border border-border p-3 flex items-center gap-2"
             >
-              <Icon className={cn("w-5 h-5", item.colorClass)} />
+              <Icon className={cn("w-4 h-4", item.colorClass)} />
               <div>
-                <p className="text-2xl font-bold">{item.value}</p>
-                <p className="text-xs text-muted-foreground">{item.label}</p>
+                <p className="text-xl font-bold">{item.value}</p>
+                <p className="text-[10px] text-muted-foreground">{item.label}</p>
               </div>
             </motion.div>
           );
@@ -329,14 +407,7 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
                     {day && (
                       <>
                         <span className={cn("text-sm font-medium", isToday && "text-accent", isSelected && "text-primary")}>{day}</span>
-                        {dayPosts && dayPosts.length > 0 && (
-                          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
-                            {dayPosts.slice(0, 3).map((post, i) => (
-                              <div key={i} className={cn("w-1.5 h-1.5 rounded-full", statusConfig[post.status as StatusKey]?.dot || "bg-muted-foreground")} />
-                            ))}
-                            {dayPosts.length > 3 && <span className="text-[8px] text-muted-foreground">+{dayPosts.length - 3}</span>}
-                          </div>
-                        )}
+                        {dayPosts && renderDayIndicators(dayPosts)}
                       </>
                     )}
                   </motion.div>
@@ -364,7 +435,8 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
             selectedDayPosts.length > 0 ? (
               <div className="space-y-3 max-h-[500px] overflow-y-auto">
                 {selectedDayPosts.map((post, index) => {
-                  const StatusIcon = statusConfig[post.status as StatusKey]?.icon || Clock;
+                  const config = statusConfig[post.status as StatusKey];
+                  const StatusIcon = config?.icon || Clock;
                   return (
                     <motion.div
                       key={post.id}
@@ -389,9 +461,9 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm line-clamp-2 mb-2">{post.content}</p>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium", statusConfig[post.status as StatusKey]?.bg, statusConfig[post.status as StatusKey]?.color)}>
+                            <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium", config?.bg, config?.color)}>
                               <StatusIcon className="w-3 h-3" />
-                              {statusConfig[post.status as StatusKey]?.label}
+                              {config?.label}
                             </span>
                             <span className="text-xs text-muted-foreground flex items-center gap-1">
                               <Clock className="w-3 h-3" />
@@ -402,6 +474,12 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
                             <div className="mt-2 p-2 bg-red-500/10 rounded-lg">
                               <p className="text-xs text-red-500">{post.error_message}</p>
                               <p className="text-xs text-muted-foreground mt-1">{getSuggestion(post.error_message)}</p>
+                            </div>
+                          )}
+                          {post.status === 'rejected' && post.error_message && (
+                            <div className="mt-2 p-2 bg-red-700/10 rounded-lg">
+                              <p className="text-xs font-medium text-red-700">Motivo da rejeição:</p>
+                              <p className="text-xs text-red-700">{post.error_message}</p>
                             </div>
                           )}
                         </div>
@@ -420,11 +498,34 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
                                 <Edit className="w-4 h-4 mr-2" /> Editar conteúdo
                               </DropdownMenuItem>
                             )}
+                            <DropdownMenuSeparator />
+                            {/* Approval workflow actions */}
+                            {post.status === 'draft' && (
+                              <DropdownMenuItem onClick={() => handleSubmitForApproval(post.id)}>
+                                <Send className="w-4 h-4 mr-2" /> Enviar para aprovação
+                              </DropdownMenuItem>
+                            )}
+                            {post.status === 'pending_approval' && (
+                              <>
+                                <DropdownMenuItem onClick={() => handleApprovePost(post.id)}>
+                                  <ShieldCheck className="w-4 h-4 mr-2 text-green-500" /> Aprovar
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleOpenRejectDialog(post.id)}>
+                                  <ShieldX className="w-4 h-4 mr-2 text-red-500" /> Rejeitar
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            {post.status === 'rejected' && onEditPost && (
+                              <DropdownMenuItem onClick={() => onEditPost(post)}>
+                                <Edit className="w-4 h-4 mr-2" /> Editar e reenviar
+                              </DropdownMenuItem>
+                            )}
                             {(post.status === 'draft' || post.status === 'scheduled') && (
                               <DropdownMenuItem onClick={() => handlePublishNow(post)} disabled={publishing}>
                                 <Send className="w-4 h-4 mr-2" /> Publicar agora
                               </DropdownMenuItem>
                             )}
+                            <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleDeletePost(post.id)} className="text-destructive focus:text-destructive">
                               <Trash2 className="w-4 h-4 mr-2" /> Excluir
                             </DropdownMenuItem>
@@ -459,77 +560,138 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
             <DialogTitle>Detalhes do Post</DialogTitle>
             <DialogDescription>Informações completas sobre a publicação</DialogDescription>
           </DialogHeader>
-          {selectedPost && (
-            <div className="space-y-4 mt-4">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Status:</span>
-                <span className={cn("inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium", statusConfig[selectedPost.status as StatusKey]?.bg, statusConfig[selectedPost.status as StatusKey]?.color)}>
-                  {statusConfig[selectedPost.status as StatusKey]?.label}
-                </span>
-              </div>
-              <div>
-                <span className="text-sm text-muted-foreground block mb-2">Plataformas:</span>
-                <div className="flex flex-wrap gap-2">
-                  {selectedPost.platforms.map((platformId) => {
-                    const platform = socialPlatforms.find(p => p.id === platformId);
-                    if (!platform) return null;
-                    const Icon = platform.icon;
-                    return (
-                      <div key={platformId} className={cn("flex items-center gap-2 px-2 py-1 rounded-lg", platform.color)}>
-                        <Icon className="w-4 h-4 text-white" />
-                        <span className="text-xs text-white font-medium">{platform.name}</span>
-                      </div>
-                    );
-                  })}
+          {selectedPost && (() => {
+            const config = statusConfig[selectedPost.status as StatusKey];
+            return (
+              <div className="space-y-4 mt-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Status:</span>
+                  <span className={cn("inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium", config?.bg, config?.color)}>
+                    {config && <config.icon className="w-3 h-3" />}
+                    {config?.label}
+                  </span>
                 </div>
-              </div>
-              <div>
-                <span className="text-sm text-muted-foreground block mb-2">Conteúdo:</span>
-                <p className="text-sm bg-muted/50 rounded-lg p-3">{selectedPost.content}</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <span className="text-sm text-muted-foreground block mb-1">Criado em:</span>
-                  <span className="text-sm">{new Date(selectedPost.created_at).toLocaleString('pt-BR')}</span>
+                  <span className="text-sm text-muted-foreground block mb-2">Plataformas:</span>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedPost.platforms.map((platformId) => {
+                      const platform = socialPlatforms.find(p => p.id === platformId);
+                      if (!platform) return null;
+                      const Icon = platform.icon;
+                      return (
+                        <div key={platformId} className={cn("flex items-center gap-2 px-2 py-1 rounded-lg", platform.color)}>
+                          <Icon className="w-4 h-4 text-white" />
+                          <span className="text-xs text-white font-medium">{platform.name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                {selectedPost.scheduled_at && (
+                <div>
+                  <span className="text-sm text-muted-foreground block mb-2">Conteúdo:</span>
+                  <p className="text-sm bg-muted/50 rounded-lg p-3">{selectedPost.content}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <span className="text-sm text-muted-foreground block mb-1">Agendado para:</span>
-                    <span className="text-sm">{new Date(selectedPost.scheduled_at).toLocaleString('pt-BR')}</span>
+                    <span className="text-sm text-muted-foreground block mb-1">Criado em:</span>
+                    <span className="text-sm">{new Date(selectedPost.created_at).toLocaleString('pt-BR')}</span>
+                  </div>
+                  {selectedPost.scheduled_at && (
+                    <div>
+                      <span className="text-sm text-muted-foreground block mb-1">Agendado para:</span>
+                      <span className="text-sm">{new Date(selectedPost.scheduled_at).toLocaleString('pt-BR')}</span>
+                    </div>
+                  )}
+                  {selectedPost.published_at && (
+                    <div>
+                      <span className="text-sm text-muted-foreground block mb-1">Publicado em:</span>
+                      <span className="text-sm">{new Date(selectedPost.published_at).toLocaleString('pt-BR')}</span>
+                    </div>
+                  )}
+                </div>
+                {selectedPost.status === 'failed' && selectedPost.error_message && (
+                  <div className="p-3 bg-red-500/10 rounded-lg">
+                    <span className="text-sm font-medium text-red-500 block mb-1">Erro:</span>
+                    <p className="text-sm text-red-500">{selectedPost.error_message}</p>
+                    <p className="text-xs text-muted-foreground mt-2">{getSuggestion(selectedPost.error_message)}</p>
                   </div>
                 )}
-                {selectedPost.published_at && (
-                  <div>
-                    <span className="text-sm text-muted-foreground block mb-1">Publicado em:</span>
-                    <span className="text-sm">{new Date(selectedPost.published_at).toLocaleString('pt-BR')}</span>
+                {selectedPost.status === 'rejected' && selectedPost.error_message && (
+                  <div className="p-3 bg-red-700/10 rounded-lg">
+                    <span className="text-sm font-medium text-red-700 block mb-1">Motivo da rejeição:</span>
+                    <p className="text-sm text-red-700">{selectedPost.error_message}</p>
                   </div>
                 )}
-              </div>
-              {selectedPost.error_message && (
-                <div className="p-3 bg-red-500/10 rounded-lg">
-                  <span className="text-sm font-medium text-red-500 block mb-1">Erro:</span>
-                  <p className="text-sm text-red-500">{selectedPost.error_message}</p>
-                  <p className="text-xs text-muted-foreground mt-2">{getSuggestion(selectedPost.error_message)}</p>
+                {/* Contextual action buttons */}
+                <div className="flex flex-wrap gap-3 pt-4">
+                  <Button variant="outline" className="flex-1" onClick={() => setShowPostDetails(false)}>Fechar</Button>
+                  {onEditPost && (
+                    <Button variant="secondary" onClick={() => { onEditPost(selectedPost); setShowPostDetails(false); }}>
+                      <Edit className="w-4 h-4 mr-2" /> Editar
+                    </Button>
+                  )}
+                  {/* Draft: submit for approval */}
+                  {selectedPost.status === 'draft' && (
+                    <Button variant="outline" onClick={() => { handleSubmitForApproval(selectedPost.id); setShowPostDetails(false); }}>
+                      <Send className="w-4 h-4 mr-2" /> Enviar para Aprovação
+                    </Button>
+                  )}
+                  {/* Pending approval: approve / reject */}
+                  {selectedPost.status === 'pending_approval' && (
+                    <>
+                      <Button onClick={() => { handleApprovePost(selectedPost.id); setShowPostDetails(false); }} className="bg-green-600 hover:bg-green-700 text-white">
+                        <ShieldCheck className="w-4 h-4 mr-2" /> Aprovar
+                      </Button>
+                      <Button variant="destructive" onClick={() => { handleOpenRejectDialog(selectedPost.id); setShowPostDetails(false); }}>
+                        <ShieldX className="w-4 h-4 mr-2" /> Rejeitar
+                      </Button>
+                    </>
+                  )}
+                  {/* Rejected: edit and resubmit */}
+                  {selectedPost.status === 'rejected' && onEditPost && (
+                    <Button variant="secondary" onClick={() => { onEditPost(selectedPost); setShowPostDetails(false); }}>
+                      <Edit className="w-4 h-4 mr-2" /> Editar e Reenviar
+                    </Button>
+                  )}
+                  {(selectedPost.status === 'draft' || selectedPost.status === 'scheduled') && (
+                    <Button onClick={() => { handlePublishNow(selectedPost); setShowPostDetails(false); }} disabled={publishing}>
+                      <Send className="w-4 h-4 mr-2" /> Publicar
+                    </Button>
+                  )}
+                  <Button variant="destructive" onClick={() => { handleDeletePost(selectedPost.id); setShowPostDetails(false); }}>
+                    <Trash2 className="w-4 h-4 mr-2" /> Excluir
+                  </Button>
                 </div>
-              )}
-              <div className="flex gap-3 pt-4">
-                <Button variant="outline" className="flex-1" onClick={() => setShowPostDetails(false)}>Fechar</Button>
-                {onEditPost && (
-                  <Button variant="secondary" onClick={() => { onEditPost(selectedPost); setShowPostDetails(false); }}>
-                    <Edit className="w-4 h-4 mr-2" /> Editar
-                  </Button>
-                )}
-                {(selectedPost.status === 'draft' || selectedPost.status === 'scheduled') && (
-                  <Button onClick={() => { handlePublishNow(selectedPost); setShowPostDetails(false); }} disabled={publishing}>
-                    <Send className="w-4 h-4 mr-2" /> Publicar
-                  </Button>
-                )}
-                <Button variant="destructive" onClick={() => { handleDeletePost(selectedPost.id); setShowPostDetails(false); }}>
-                  <Trash2 className="w-4 h-4 mr-2" /> Excluir
-                </Button>
               </div>
-            </div>
-          )}
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Reason Dialog */}
+      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldX className="w-5 h-5 text-red-500" />
+              Rejeitar Post
+            </DialogTitle>
+            <DialogDescription>Informe o motivo da rejeição para que o autor possa corrigir.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Descreva o motivo da rejeição..."
+              className="min-h-[100px]"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRejectDialog(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleConfirmReject} disabled={!rejectReason.trim()}>
+              <ShieldX className="w-4 h-4 mr-2" /> Confirmar Rejeição
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </motion.div>

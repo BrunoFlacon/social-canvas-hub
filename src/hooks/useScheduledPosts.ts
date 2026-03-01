@@ -11,7 +11,8 @@ export interface ScheduledPost {
   platforms: string[];
   media_type: string;
   orientation: string;
-  status: 'draft' | 'scheduled' | 'published' | 'failed';
+  status: 'draft' | 'scheduled' | 'published' | 'failed' | 'pending_approval' | 'rejected';
+  rejection_reason?: string | null;
   scheduled_at: string | null;
   published_at: string | null;
   error_message: string | null;
@@ -248,6 +249,63 @@ export function useScheduledPosts() {
       .slice(0, limit);
   };
 
+  const submitForApproval = async (postId: string): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      const { error } = await supabase
+        .from('scheduled_posts')
+        .update({ status: 'pending_approval' })
+        .eq('id', postId)
+        .eq('user_id', user.id);
+      if (error) throw error;
+      await fetchPosts();
+      toast({ title: "Enviado para aprovação", description: "O post aguarda revisão do editor." });
+      return true;
+    } catch (error) {
+      console.error('Error submitting for approval:', error);
+      toast({ title: "Erro", description: "Não foi possível enviar para aprovação.", variant: "destructive" });
+      return false;
+    }
+  };
+
+  const approvePost = async (postId: string): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      const { error } = await supabase
+        .from('scheduled_posts')
+        .update({ status: 'scheduled', error_message: null })
+        .eq('id', postId)
+        .eq('user_id', user.id);
+      if (error) throw error;
+      await fetchPosts();
+      toast({ title: "Post aprovado!", description: "O post foi aprovado e está agendado." });
+      return true;
+    } catch (error) {
+      console.error('Error approving post:', error);
+      toast({ title: "Erro", description: "Não foi possível aprovar o post.", variant: "destructive" });
+      return false;
+    }
+  };
+
+  const rejectPost = async (postId: string, reason: string): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      const { error } = await supabase
+        .from('scheduled_posts')
+        .update({ status: 'rejected', error_message: reason })
+        .eq('id', postId)
+        .eq('user_id', user.id);
+      if (error) throw error;
+      await fetchPosts();
+      toast({ title: "Post rejeitado", description: "O post foi devolvido para revisão." });
+      return true;
+    } catch (error) {
+      console.error('Error rejecting post:', error);
+      toast({ title: "Erro", description: "Não foi possível rejeitar o post.", variant: "destructive" });
+      return false;
+    }
+  };
+
   return {
     posts,
     loading,
@@ -256,6 +314,9 @@ export function useScheduledPosts() {
     deletePost,
     getPostsByDate,
     getUpcomingPosts,
+    submitForApproval,
+    approvePost,
+    rejectPost,
     refetch: fetchPosts,
   };
 }
