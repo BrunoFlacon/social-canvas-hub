@@ -1,86 +1,64 @@
-# Plano: Fluxo de Aprovacao Editorial + Indicadores Visuais no Calendario
 
-## O que sera feito
 
-continue a geração da instrução anterior e implemente o plano a seguir
+# Plano: Estabilizar Calendario Editorial e Corrigir Erros
 
-### 1. Novo status "pending_approval" no fluxo editorial
+## Analise
 
-Adicionar um novo status ao fluxo de publicacoes para suportar o ciclo jornalistico: **Rascunho -> Aguardando Aprovacao -> Aprovado/Agendado -> Publicado**.
+Apos revisar todo o codigo, o calendario editorial, o painel de criacao e o fluxo de aprovacao estao **implementados corretamente**. Os componentes principais (`CalendarView.tsx`, `CreatePostPanel.tsx`, `useScheduledPosts.ts`, `Dashboard.tsx`) possuem toda a logica necessaria.
 
-**Migracao de banco de dados:**
+Os problemas potenciais identificados sao:
 
-- Nenhuma alteracao de schema necessaria: o campo `status` da tabela `scheduled_posts` ja e do tipo `text`, entao novos valores como `pending_approval` e `rejected` podem ser usados diretamente.
+### 1. Realtime subscription instavel
+Em `CalendarView.tsx` (linha 135), o `useEffect` depende de `refetch`, que e recriado a cada render do `useScheduledPosts`. Isso causa re-subscricoes constantes ao canal Realtime, potencialmente causando flickering ou perda de dados.
 
-**Arquivo: `src/hooks/useScheduledPosts.ts**`
+### 2. Estado do CreatePostPanel nao reseta ao trocar de editingPost
+Quando o usuario clica "Editar" em um post do calendario, os `useState` iniciais usam `editingPost` apenas na inicializacao. Se o usuario editar um post e depois clicar em outro, os campos NAO atualizam porque `useState(initialValue)` so roda na primeira montagem.
 
-- Expandir o tipo `status` para incluir `'pending_approval' | 'rejected'`
-- Adicionar funcoes `submitForApproval(postId)` e `approvePost(postId)` / `rejectPost(postId, reason)`
+### 3. Sidebar fixa com `pl-64` pode ocultar conteudo em telas menores
+O `Dashboard.tsx` usa `pl-64` fixo, que pode causar problemas de layout quando o sidebar colapsa.
 
-### 2. Atualizar statusConfig no CalendarView
+---
 
-**Arquivo: `src/components/dashboard/CalendarView.tsx**`
+## Correcoes
 
-Adicionar configs para os novos status:
+### Passo 1: Estabilizar refetch com useCallback no useScheduledPosts
 
-- `pending_approval`: icone `Clock` com cor laranja, label "Aguardando Aprovacao"
-- `rejected`: icone `AlertCircle` com cor vermelha escura, label "Rejeitado"
+**Arquivo: `src/hooks/useScheduledPosts.ts`**
+- Envolver `fetchPosts` com `useCallback` para manter referencia estavel
+- Isso impede re-subscricoes desnecessarias do canal Realtime no CalendarView
 
-Adicionar acoes no dropdown de cada post:
+### Passo 2: Sincronizar estado do CreatePostPanel com editingPost
 
-- "Enviar para aprovacao" (quando status e `draft`)
-- "Aprovar" e "Rejeitar" (quando status e `pending_approval`)
+**Arquivo: `src/components/dashboard/CreatePostPanel.tsx`**
+- Adicionar `useEffect` que observa mudancas em `editingPost` e `initialDate`
+- Quando `editingPost` muda, atualizar `content`, `selectedPlatforms`, `scheduledDate`, `selectedMedia` e `orientation`
+- Quando `initialDate` muda, atualizar `scheduledDate`
 
-### 3. Indicadores visuais ricos nos quadradinhos do calendario
+### Passo 3: Estabilizar Realtime no CalendarView
 
-**Arquivo: `src/components/dashboard/CalendarView.tsx**`
+**Arquivo: `src/components/dashboard/CalendarView.tsx`**
+- Usar `useRef` para armazenar a referencia de `refetch` e evitar dependencia no useEffect
+- Garantir que o canal Realtime so e recriado quando necessario
 
-Substituir os pontos coloridos simples por mini-icones de status nos quadradinhos dos dias:
+### Passo 4: Sidebar responsiva
 
-- Cada post mostrara um pequeno icone (CheckCircle2, Clock, Edit, AlertCircle, etc.) colorido dentro do quadradinho do dia
-- Agrupar por status quando houver muitos posts (ex: "2x publicado, 1x rascunho")
-- Mostrar contagem total quando houver mais de 4 posts no dia
-
-### 4. Painel de aprovacao no CreatePostPanel
-
-**Arquivo: `src/components/dashboard/CreatePostPanel.tsx**`
-
-- Adicionar botao "Enviar para Aprovacao" ao lado de "Salvar Rascunho"
-- Quando o post estiver com status `pending_approval`, mostrar botoes "Aprovar" e "Rejeitar" (simulando o papel do editor)
-- Campo de motivo de rejeicao ao rejeitar
-
-### 5. Acoes de aprovacao no dialogo de detalhes
-
-**Arquivo: `src/components/dashboard/CalendarView.tsx**`
-
-No dialogo de detalhes do post, adicionar botoes contextuais:
-
-- Post `draft`: "Enviar para Aprovacao"
-- Post `pending_approval`: "Aprovar" e "Rejeitar"
-- Post `rejected`: Mostrar motivo da rejeicao + "Editar e Reenviar"
+**Arquivo: `src/pages/Dashboard.tsx`**
+- Ajustar `pl-64` para ser dinamico com base no estado colapsado do sidebar (se aplicavel)
+- Manter funcionalidade existente
 
 ---
 
 ## Detalhes Tecnicos
 
 ### Arquivos editados:
+- `src/hooks/useScheduledPosts.ts` - `useCallback` no `fetchPosts`
+- `src/components/dashboard/CreatePostPanel.tsx` - `useEffect` para sync com `editingPost`
+- `src/components/dashboard/CalendarView.tsx` - `useRef` para `refetch` estavel
 
-- `src/hooks/useScheduledPosts.ts` - Novos status e funcoes (submitForApproval, approvePost, rejectPost)
-- `src/components/dashboard/CalendarView.tsx` - Novos status no statusConfig, icones ricos nos dias, acoes de aprovacao
-- `src/components/dashboard/CreatePostPanel.tsx` - Botao "Enviar para Aprovacao"
+### Resultado esperado:
+- Calendario exibe grade de dias com icones de status corretamente
+- Clicar "+" no dia abre CreatePostPanel com data pre-selecionada
+- Clicar "Editar" abre o post com campos pre-preenchidos (e atualiza ao trocar de post)
+- Realtime funciona sem re-subscricoes
+- Fluxo completo: criar pauta -> desenvolver conteudo -> enviar para aprovacao -> aprovar/rejeitar -> publicar
 
-### Fluxo editorial completo:
-
-1. Jornalista cria pauta (rascunho) no calendario
-2. Desenvolve conteudo no painel de criacao
-3. Clica "Enviar para Aprovacao"
-4. Editor ve posts com status "Aguardando Aprovacao" no calendario (icone laranja)
-5. Editor aprova (muda para "scheduled") ou rejeita (muda para "rejected" com motivo)
-6. Se rejeitado, jornalista edita e reenvia
-7. Se aprovado, pode publicar imediatamente ou aguardar agendamento
-
-### Indicadores visuais nos quadradinhos:
-
-- Cada dia mostrara ate 4 mini-icones coloridos representando os posts daquele dia
-- Se houver mais de 4 posts, mostra 3 icones + badge "+N"
-- Icones usados: CheckCircle2 (publicado/verde), Clock (agendado/azul), Edit (rascunho/amarelo), AlertCircle (falha/vermelho), Loader2 (aguardando aprovacao/laranja), X (rejeitado/vermelho escuro)
