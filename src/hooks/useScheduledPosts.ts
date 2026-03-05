@@ -36,9 +36,14 @@ export function useScheduledPosts() {
   const { toast } = useToast();
 
   const fetchPosts = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setPosts([]);
+      setLoading(false);
+      return;
+    }
 
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from('scheduled_posts')
         .select('*')
@@ -62,7 +67,7 @@ export function useScheduledPosts() {
 
   useEffect(() => {
     fetchPosts();
-  }, [user]);
+  }, [fetchPosts]);
 
   const createPost = async (input: CreatePostInput): Promise<ScheduledPost | null> => {
     if (!user) {
