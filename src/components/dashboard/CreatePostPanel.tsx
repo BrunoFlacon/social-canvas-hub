@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Image, 
@@ -174,6 +174,29 @@ export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackT
   const { publishNow, publishing } = usePublisher();
 
   const isEditing = !!editingPost;
+
+  // Sync state when editingPost or initialDate changes
+  useEffect(() => {
+    if (editingPost) {
+      setContent(editingPost.content || "");
+      setSelectedPlatforms((editingPost.platforms as SocialPlatformId[]) || []);
+      setSelectedMedia((editingPost.media_type as MediaType) || null);
+      setOrientation((editingPost.orientation as "horizontal" | "vertical") || "horizontal");
+      setScheduledDate(
+        editingPost.scheduled_at
+          ? new Date(editingPost.scheduled_at).toISOString().slice(0, 16)
+          : ""
+      );
+      setUploadedFiles([]);
+    } else {
+      setContent("");
+      setSelectedPlatforms([]);
+      setSelectedMedia(null);
+      setOrientation("horizontal");
+      setScheduledDate(initialDate || "");
+      setUploadedFiles([]);
+    }
+  }, [editingPost, initialDate]);
 
   const togglePlatform = (id: SocialPlatformId) => {
     setSelectedPlatforms(prev =>

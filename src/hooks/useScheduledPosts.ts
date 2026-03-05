@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -35,7 +35,7 @@ export function useScheduledPosts() {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     if (!user) return;
 
     try {
@@ -47,7 +47,6 @@ export function useScheduledPosts() {
 
       if (error) throw error;
       
-      // Cast the status to the correct type
       const typedPosts = (data || []).map((post) => ({
         ...post,
         status: post.status as ScheduledPost['status'],
@@ -59,7 +58,7 @@ export function useScheduledPosts() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     fetchPosts();

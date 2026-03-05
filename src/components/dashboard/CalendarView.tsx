@@ -121,18 +121,21 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
   const firstDayOfMonth = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  // Realtime subscription
+  // Realtime subscription with stable ref
+  const refetchRef = useRef(refetch);
+  useEffect(() => { refetchRef.current = refetch; }, [refetch]);
+
   useEffect(() => {
     const channel = supabase
       .channel('calendar-realtime')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'scheduled_posts' },
-        () => { refetch(); }
+        () => { refetchRef.current(); }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [refetch]);
+  }, []);
 
   // Notify about failed posts
   const notifiedFailuresRef = useRef(new Set<string>());
