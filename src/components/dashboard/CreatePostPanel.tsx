@@ -143,7 +143,7 @@ interface CreatePostPanelProps {
   submitForApproval: (postId: string) => Promise<boolean>;
 }
 
-export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackToCalendar }: CreatePostPanelProps) => {
+export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackToCalendar, createPost, updatePost, submitForApproval }: CreatePostPanelProps) => {
   const [content, setContent] = useState(editingPost?.content || "");
   const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatformId[]>(
     (editingPost?.platforms as SocialPlatformId[]) || []
@@ -170,7 +170,7 @@ export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackT
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadMedia, uploading, progress: uploadProgress } = useMediaUpload();
-  const { createPost, updatePost, submitForApproval } = useScheduledPosts();
+  
   const { addNotification } = useNotifications();
   const { toast } = useToast();
   const { generateContent, generating } = useAIContent();
