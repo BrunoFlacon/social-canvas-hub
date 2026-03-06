@@ -126,7 +126,7 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
   
   const firstDayOfMonth = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  }, []);
+  
 
   // Notify about failed posts
   const notifiedFailuresRef = useRef(new Set<string>());
