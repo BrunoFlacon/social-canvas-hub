@@ -24,6 +24,7 @@ import { socialPlatforms } from "@/components/icons/SocialIcons";
 import { ScheduledPost } from "@/hooks/useScheduledPosts";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { usePublisher } from "@/hooks/usePublisher";
+import { useUserRole } from "@/hooks/useUserRole";
 
 import {
   DropdownMenu,
@@ -120,6 +121,7 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
 
   const { addNotification } = useNotifications();
   const { publishNow, publishing } = usePublisher();
+  const { isEditor } = useUserRole();
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -499,7 +501,7 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
                                 <Send className="w-4 h-4 mr-2" /> Enviar para aprovação
                               </DropdownMenuItem>
                             )}
-                            {post.status === 'pending_approval' && (
+                            {post.status === 'pending_approval' && isEditor && (
                               <>
                                 <DropdownMenuItem onClick={() => handleApprovePost(post.id)}>
                                   <ShieldCheck className="w-4 h-4 mr-2 text-green-500" /> Aprovar
@@ -631,7 +633,7 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
                     </Button>
                   )}
                   {/* Pending approval: approve / reject */}
-                  {selectedPost.status === 'pending_approval' && (
+                  {selectedPost.status === 'pending_approval' && isEditor && (
                     <>
                       <Button onClick={() => { handleApprovePost(selectedPost.id); setShowPostDetails(false); }} className="bg-green-600 hover:bg-green-700 text-white">
                         <ShieldCheck className="w-4 h-4 mr-2" /> Aprovar
