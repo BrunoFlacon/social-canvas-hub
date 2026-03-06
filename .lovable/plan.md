@@ -1,86 +1,135 @@
-# Plano: Fluxo de Aprovacao Editorial + Indicadores Visuais no Calendario
 
-## O que sera feito
 
-continue a geração da instrução anterior e implemente o plano a seguir
+# Plano: Corrigir Perfil, Notificacoes, Calendario e Adicionar Papeis de Usuario
 
-### 1. Novo status "pending_approval" no fluxo editorial
+## Problemas Identificados
 
-Adicionar um novo status ao fluxo de publicacoes para suportar o ciclo jornalistico: **Rascunho -> Aguardando Aprovacao -> Aprovado/Agendado -> Publicado**.
+### 1. Foto de perfil nao funciona
+- O botao de camera em `SettingsView.tsx` nao faz nada (nenhum handler)
+- O `Header.tsx` mostra apenas a inicial do email, nunca exibe `avatar_url` do perfil
+- `updateProfile` no `AuthContext` nao salva `bio` nem `avatar_url` corretamente (so envia `name`)
 
-**Migracao de banco de dados:**
+### 2. Botao de configuracoes no sidebar
+- O botao de "Sair" no `Sidebar.tsx` (linha 136) nao chama `logout()` — e apenas um botao vazio
 
-- Nenhuma alteracao de schema necessaria: o campo `status` da tabela `scheduled_posts` ja e do tipo `text`, entao novos valores como `pending_approval` e `rejected` podem ser usados diretamente.
+### 3. Notificacoes
+- O `NotificationsPanel` usa dados em memoria do `NotificationContext` (state local)
+- A pagina "Notificações" no dashboard (case "notifications") esta vazia — so mostra titulo
+- Nao ha persistencia de notificacoes no banco de dados
+- Nao ha notificacoes automaticas quando posts mudam de status (aprovacao/rejeicao)
 
-**Arquivo: `src/hooks/useScheduledPosts.ts**`
+### 4. Papeis de usuario (jornalista/editor)
+- Nao existe tabela `user_roles` — qualquer usuario pode aprovar/rejeitar posts
+- Necessario criar tabela + enum + funcao `has_role` + RLS
 
-- Expandir o tipo `status` para incluir `'pending_approval' | 'rejected'`
-- Adicionar funcoes `submitForApproval(postId)` e `approvePost(postId)` / `rejectPost(postId, reason)`
+---
 
-### 2. Atualizar statusConfig no CalendarView
+## Correcoes Planejadas
 
-**Arquivo: `src/components/dashboard/CalendarView.tsx**`
+### Passo 1: Criar tabela `notifications` no banco
+- Tabela para persistir notificacoes com tipo, titulo, mensagem, plataforma, read, user_id
+- Habilitar realtime para atualizacao instantanea
+- RLS: usuarios so veem suas proprias notificacoes
 
-Adicionar configs para os novos status:
+### Passo 2: Criar tabela `user_roles` e funcao `has_role`
+- Enum `app_role` com valores `admin`, `editor`, `journalist`
+- Tabela `user_roles` com `user_id` + `role`
+- Funcao `has_role` security definer para verificar papeis sem recursao RLS
+- Atribuir role `admin` ao primeiro usuario (ou via migration)
 
-- `pending_approval`: icone `Clock` com cor laranja, label "Aguardando Aprovacao"
-- `rejected`: icone `AlertCircle` com cor vermelha escura, label "Rejeitado"
+### Passo 3: Corrigir upload de avatar no perfil
+- **SettingsView.tsx**: Adicionar input file hidden + handler que faz upload para o bucket `media` e salva `avatar_url` no perfil
+- **SettingsView.tsx**: Chamar `updateProfile({ name, bio, avatar_url })` ao salvar (atualmente so salva `name`)
+- **AuthContext.tsx**: Garantir que `updateProfile` aceita e salva `bio` e `avatar_url`
 
-Adicionar acoes no dropdown de cada post:
+### Passo 4: Exibir avatar no Header
+- **Header.tsx**: Usar componente `Avatar` com `profile?.avatar_url` como imagem, fallback para inicial do nome/email
 
-- "Enviar para aprovacao" (quando status e `draft`)
-- "Aprovar" e "Rejeitar" (quando status e `pending_approval`)
+### Passo 5: Corrigir botao Sair no Sidebar
+- **Sidebar.tsx**: Receber `onLogout` como prop, chamar `logout()` do AuthContext no Dashboard e passar
 
-### 3. Indicadores visuais ricos nos quadradinhos do calendario
+### Passo 6: Refatorar NotificationContext para usar banco de dados
+- **NotificationContext.tsx**: `addNotification` insere no banco via supabase
+- `notifications` sao carregadas do banco com realtime subscription
+- `markAsRead`, `markAllAsRead`, `removeNotification`, `clearAll` operam via supabase
+- Manter compatibilidade com `useNotifications()` existente
 
-**Arquivo: `src/components/dashboard/CalendarView.tsx**`
+### Passo 7: Pagina de notificacoes completa no Dashboard
+- **Dashboard.tsx** case "notifications": Renderizar lista completa de notificacoes com filtros (lidas/nao lidas/todas), usando dados do `NotificationContext`
 
-Substituir os pontos coloridos simples por mini-icones de status nos quadradinhos dos dias:
+### Passo 8: Notificacoes automaticas no fluxo editorial
+- Quando um post e enviado para aprovacao (`submitForApproval`), criar notificacao para editores
+- Quando um post e aprovado/rejeitado, criar notificacao para o autor
+- Integrar no `useScheduledPosts` ou via trigger no banco
 
-- Cada post mostrara um pequeno icone (CheckCircle2, Clock, Edit, AlertCircle, etc.) colorido dentro do quadradinho do dia
-- Agrupar por status quando houver muitos posts (ex: "2x publicado, 1x rascunho")
-- Mostrar contagem total quando houver mais de 4 posts no dia
-
-### 4. Painel de aprovacao no CreatePostPanel
-
-**Arquivo: `src/components/dashboard/CreatePostPanel.tsx**`
-
-- Adicionar botao "Enviar para Aprovacao" ao lado de "Salvar Rascunho"
-- Quando o post estiver com status `pending_approval`, mostrar botoes "Aprovar" e "Rejeitar" (simulando o papel do editor)
-- Campo de motivo de rejeicao ao rejeitar
-
-### 5. Acoes de aprovacao no dialogo de detalhes
-
-**Arquivo: `src/components/dashboard/CalendarView.tsx**`
-
-No dialogo de detalhes do post, adicionar botoes contextuais:
-
-- Post `draft`: "Enviar para Aprovacao"
-- Post `pending_approval`: "Aprovar" e "Rejeitar"
-- Post `rejected`: Mostrar motivo da rejeicao + "Editar e Reenviar"
+### Passo 9: Restringir aprovacao/rejeicao a editores
+- No `CalendarView.tsx`, verificar role do usuario antes de mostrar botoes "Aprovar"/"Rejeitar"
+- No `useScheduledPosts`, validar role antes de executar `approvePost`/`rejectPost`
+- Criar hook `useUserRole` que busca role do usuario logado
 
 ---
 
 ## Detalhes Tecnicos
 
+### Migracao SQL (2 migrations):
+
+**Migration 1 — Notificacoes:**
+```sql
+CREATE TABLE public.notifications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  type text NOT NULL DEFAULT 'info',
+  title text NOT NULL,
+  message text NOT NULL,
+  platform text,
+  read boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own notifications" ON public.notifications FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own notifications" ON public.notifications FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own notifications" ON public.notifications FOR UPDATE TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Users can delete own notifications" ON public.notifications FOR DELETE TO authenticated USING (auth.uid() = user_id);
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+```
+
+**Migration 2 — User Roles:**
+```sql
+CREATE TYPE public.app_role AS ENUM ('admin', 'editor', 'journalist');
+
+CREATE TABLE public.user_roles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  role app_role NOT NULL,
+  UNIQUE (user_id, role)
+);
+
+ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own roles" ON public.user_roles FOR SELECT TO authenticated USING (auth.uid() = user_id);
+
+CREATE OR REPLACE FUNCTION public.has_role(_user_id uuid, _role app_role)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+  SELECT EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = _user_id AND role = _role)
+$$;
+```
+
 ### Arquivos editados:
+- `src/components/dashboard/SettingsView.tsx` — upload avatar + salvar bio
+- `src/components/dashboard/Header.tsx` — exibir avatar do perfil
+- `src/components/dashboard/Sidebar.tsx` — botao sair funcional
+- `src/pages/Dashboard.tsx` — passar logout, renderizar pagina notificacoes completa
+- `src/contexts/NotificationContext.tsx` — persistir no banco com realtime
+- `src/contexts/AuthContext.tsx` — garantir updateProfile salva bio/avatar
+- `src/hooks/useUserRole.ts` (novo) — hook para verificar role do usuario
+- `src/hooks/useScheduledPosts.ts` — notificacoes automaticas no fluxo editorial
+- `src/components/dashboard/CalendarView.tsx` — condicionar botoes aprovar/rejeitar a role editor/admin
 
-- `src/hooks/useScheduledPosts.ts` - Novos status e funcoes (submitForApproval, approvePost, rejectPost)
-- `src/components/dashboard/CalendarView.tsx` - Novos status no statusConfig, icones ricos nos dias, acoes de aprovacao
-- `src/components/dashboard/CreatePostPanel.tsx` - Botao "Enviar para Aprovacao"
+### Arquivos novos:
+- `src/hooks/useUserRole.ts`
 
-### Fluxo editorial completo:
-
-1. Jornalista cria pauta (rascunho) no calendario
-2. Desenvolve conteudo no painel de criacao
-3. Clica "Enviar para Aprovacao"
-4. Editor ve posts com status "Aguardando Aprovacao" no calendario (icone laranja)
-5. Editor aprova (muda para "scheduled") ou rejeita (muda para "rejected" com motivo)
-6. Se rejeitado, jornalista edita e reenvia
-7. Se aprovado, pode publicar imediatamente ou aguardar agendamento
-
-### Indicadores visuais nos quadradinhos:
-
-- Cada dia mostrara ate 4 mini-icones coloridos representando os posts daquele dia
-- Se houver mais de 4 posts, mostra 3 icones + badge "+N"
-- Icones usados: CheckCircle2 (publicado/verde), Clock (agendado/azul), Edit (rascunho/amarelo), AlertCircle (falha/vermelho), Loader2 (aguardando aprovacao/laranja), X (rejeitado/vermelho escuro)
