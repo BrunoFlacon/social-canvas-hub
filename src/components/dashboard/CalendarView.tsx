@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -21,10 +21,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { socialPlatforms } from "@/components/icons/SocialIcons";
-import { useScheduledPosts, ScheduledPost } from "@/hooks/useScheduledPosts";
+import { ScheduledPost } from "@/hooks/useScheduledPosts";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { usePublisher } from "@/hooks/usePublisher";
-import { supabase } from "@/integrations/supabase/client";
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -97,11 +97,18 @@ const statusConfig = {
 type StatusKey = keyof typeof statusConfig;
 
 interface CalendarViewProps {
+  posts: ScheduledPost[];
+  loading: boolean;
+  deletePost: (postId: string) => Promise<boolean>;
+  submitForApproval: (postId: string) => Promise<boolean>;
+  approvePost: (postId: string) => Promise<boolean>;
+  rejectPost: (postId: string, reason: string) => Promise<boolean>;
+  refetch: () => Promise<void>;
   onCreatePost?: (preSelectedDate?: Date) => void;
   onEditPost?: (post: ScheduledPost) => void;
 }
 
-export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) => {
+export const CalendarView = ({ posts, loading, deletePost, submitForApproval, approvePost, rejectPost, refetch, onCreatePost, onEditPost }: CalendarViewProps) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedPost, setSelectedPost] = useState<ScheduledPost | null>(null);
@@ -111,7 +118,6 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
   const [rejectingPostId, setRejectingPostId] = useState<string | null>(null);
   const [activeFilters, setActiveFilters] = useState<Set<StatusKey>>(new Set(["published", "scheduled", "draft", "failed", "pending_approval", "rejected"]));
 
-  const { posts, loading, deletePost, submitForApproval, approvePost, rejectPost, refetch } = useScheduledPosts();
   const { addNotification } = useNotifications();
   const { publishNow, publishing } = usePublisher();
 
@@ -120,22 +126,7 @@ export const CalendarView = ({ onCreatePost, onEditPost }: CalendarViewProps) =>
   
   const firstDayOfMonth = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-  // Realtime subscription with stable ref
-  const refetchRef = useRef(refetch);
-  useEffect(() => { refetchRef.current = refetch; }, [refetch]);
-
-  useEffect(() => {
-    const channel = supabase
-      .channel('calendar-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'scheduled_posts' },
-        () => { refetchRef.current(); }
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
+  
 
   // Notify about failed posts
   const notifiedFailuresRef = useRef(new Set<string>());

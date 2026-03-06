@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { 
   Eye, 
@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { useWebPushNotifications } from "@/hooks/useWebPushNotifications";
 import { useSocialConnections } from "@/hooks/useSocialConnections";
+import { useScheduledPosts } from "@/hooks/useScheduledPosts";
+import { supabase } from "@/integrations/supabase/client";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { StatsCard } from "@/components/dashboard/StatsCard";
@@ -36,6 +38,23 @@ const Dashboard = () => {
   useWebPushNotifications();
 
   const { connections, initiateOAuth, disconnect } = useSocialConnections();
+  const scheduledPosts = useScheduledPosts();
+
+  // Realtime subscription for scheduled_posts - shared across all views
+  const refetchRef = useRef(scheduledPosts.refetch);
+  useEffect(() => { refetchRef.current = scheduledPosts.refetch; }, [scheduledPosts.refetch]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('dashboard-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'scheduled_posts' },
+        () => { refetchRef.current(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   const isConnected = (platformId: string) =>
     connections.some(c => c.platform === platformId && c.is_connected);
@@ -60,12 +79,16 @@ const Dashboard = () => {
               onPostSaved={() => {
                 setEditingPost(null);
                 setPreSelectedDate(null);
+                scheduledPosts.refetch();
               }}
               onBackToCalendar={editingPost || preSelectedDate ? () => {
                 setEditingPost(null);
                 setPreSelectedDate(null);
                 setActiveTab("calendar");
               } : undefined}
+              createPost={scheduledPosts.createPost}
+              updatePost={scheduledPosts.updatePost}
+              submitForApproval={scheduledPosts.submitForApproval}
             />
           </div>
         );
@@ -102,6 +125,13 @@ const Dashboard = () => {
       case "calendar":
         return (
           <CalendarView
+            posts={scheduledPosts.posts}
+            loading={scheduledPosts.loading}
+            deletePost={scheduledPosts.deletePost}
+            submitForApproval={scheduledPosts.submitForApproval}
+            approvePost={scheduledPosts.approvePost}
+            rejectPost={scheduledPosts.rejectPost}
+            refetch={scheduledPosts.refetch}
             onCreatePost={(date?: Date) => {
               setEditingPost(null);
               setPreSelectedDate(date || null);

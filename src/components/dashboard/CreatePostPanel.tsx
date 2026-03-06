@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { socialPlatforms, SocialPlatformId } from "@/components/icons/SocialIcons";
 import { useMediaUpload, type UploadedMedia } from "@/hooks/useMediaUpload";
 import { BulkUploadDialog } from "@/components/dashboard/BulkUploadDialog";
-import { useScheduledPosts, ScheduledPost } from "@/hooks/useScheduledPosts";
+import { ScheduledPost, CreatePostInput } from "@/hooks/useScheduledPosts";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAIContent } from "@/hooks/useAIContent";
@@ -138,9 +138,12 @@ interface CreatePostPanelProps {
   editingPost?: ScheduledPost | null;
   onPostSaved?: () => void;
   onBackToCalendar?: () => void;
+  createPost: (input: CreatePostInput) => Promise<ScheduledPost | null>;
+  updatePost: (postId: string, updates: Partial<CreatePostInput>) => Promise<boolean>;
+  submitForApproval: (postId: string) => Promise<boolean>;
 }
 
-export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackToCalendar }: CreatePostPanelProps) => {
+export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackToCalendar, createPost, updatePost, submitForApproval }: CreatePostPanelProps) => {
   const [content, setContent] = useState(editingPost?.content || "");
   const [selectedPlatforms, setSelectedPlatforms] = useState<SocialPlatformId[]>(
     (editingPost?.platforms as SocialPlatformId[]) || []
@@ -167,7 +170,7 @@ export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackT
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadMedia, uploading, progress: uploadProgress } = useMediaUpload();
-  const { createPost, updatePost, submitForApproval } = useScheduledPosts();
+  
   const { addNotification } = useNotifications();
   const { toast } = useToast();
   const { generateContent, generating } = useAIContent();
