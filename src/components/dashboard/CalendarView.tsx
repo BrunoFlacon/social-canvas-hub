@@ -120,29 +120,12 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
 
   const { addNotification } = useNotifications();
   const { publishNow, publishing } = usePublisher();
-  const { addNotification } = useNotifications();
-  const { publishNow, publishing } = usePublisher();
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   
   const firstDayOfMonth = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-  // Realtime subscription with stable ref
-  const refetchRef = useRef(refetch);
-  useEffect(() => { refetchRef.current = refetch; }, [refetch]);
-
-  useEffect(() => {
-    const channel = supabase
-      .channel('calendar-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'scheduled_posts' },
-        () => { refetchRef.current(); }
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
   }, []);
 
   // Notify about failed posts
