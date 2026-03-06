@@ -18,6 +18,7 @@ import { useState } from "react";
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  onLogout?: () => void;
 }
 
 const menuItems = [
@@ -35,7 +36,7 @@ const bottomItems = [
   { id: "settings", icon: Settings, label: "Configurações" },
 ];
 
-export const Sidebar = ({ activeTab, setActiveTab }: SidebarProps) => {
+export const Sidebar = ({ activeTab, setActiveTab, onLogout }: SidebarProps) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
@@ -133,7 +134,10 @@ export const Sidebar = ({ activeTab, setActiveTab }: SidebarProps) => {
               {!isCollapsed && <span className="font-medium">{item.label}</span>}
             </button>
           ))}
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-destructive hover:bg-destructive/10 transition-all">
+          <button
+            onClick={onLogout}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-destructive hover:bg-destructive/10 transition-all"
+          >
             <LogOut className="w-5 h-5" />
             {!isCollapsed && <span className="font-medium">Sair</span>}
           </button>

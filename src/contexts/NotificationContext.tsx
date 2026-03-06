@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 export interface Notification {
   id: string;
@@ -35,65 +37,95 @@ interface NotificationProviderProps {
 }
 
 export const NotificationProvider = ({ children }: NotificationProviderProps) => {
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: '1',
-      type: 'success',
-      title: 'Post publicado',
-      message: 'Seu post foi publicado com sucesso no Instagram',
-      timestamp: new Date(Date.now() - 1000 * 60 * 5),
-      read: false,
-      platform: 'instagram'
-    },
-    {
-      id: '2',
-      type: 'info',
-      title: 'Novo seguidor',
-      message: 'Você ganhou 50 novos seguidores no TikTok',
-      timestamp: new Date(Date.now() - 1000 * 60 * 30),
-      read: false,
-      platform: 'tiktok'
-    },
-    {
-      id: '3',
-      type: 'warning',
-      title: 'Agendamento próximo',
-      message: 'Post agendado para as 15:00 no Facebook',
-      timestamp: new Date(Date.now() - 1000 * 60 * 60),
-      read: true,
-      platform: 'facebook'
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const { user } = useAuth();
+
+  // Fetch notifications from DB
+  const fetchNotifications = useCallback(async () => {
+    if (!user) {
+      setNotifications([]);
+      return;
     }
-  ]);
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (!error && data) {
+      setNotifications(data.map((n: any) => ({
+        id: n.id,
+        type: n.type as Notification['type'],
+        title: n.title,
+        message: n.message,
+        timestamp: new Date(n.created_at),
+        read: n.read,
+        platform: n.platform || undefined,
+      })));
+    }
+  }, [user]);
+
+  // Initial fetch
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  // Realtime subscription
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('notifications-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+        () => {
+          fetchNotifications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchNotifications]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const addNotification = useCallback((notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
-    const newNotification: Notification = {
-      ...notification,
-      id: crypto.randomUUID(),
-      timestamp: new Date(),
-      read: false
-    };
-    setNotifications(prev => [newNotification, ...prev]);
+  const addNotification = useCallback(async (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
+    if (!user) return;
+    await supabase.from('notifications').insert({
+      user_id: user.id,
+      type: notification.type,
+      title: notification.title,
+      message: notification.message,
+      platform: notification.platform || null,
+    });
+    // Realtime will trigger refetch
+  }, [user]);
+
+  const markAsRead = useCallback(async (id: string) => {
+    await supabase.from('notifications').update({ read: true }).eq('id', id);
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   }, []);
 
-  const markAsRead = useCallback((id: string) => {
-    setNotifications(prev =>
-      prev.map(n => (n.id === id ? { ...n, read: true } : n))
-    );
-  }, []);
-
-  const markAllAsRead = useCallback(() => {
+  const markAllAsRead = useCallback(async () => {
+    if (!user) return;
+    await supabase.from('notifications').update({ read: true }).eq('user_id', user.id).eq('read', false);
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-  }, []);
+  }, [user]);
 
-  const removeNotification = useCallback((id: string) => {
+  const removeNotification = useCallback(async (id: string) => {
+    await supabase.from('notifications').delete().eq('id', id);
     setNotifications(prev => prev.filter(n => n.id !== id));
   }, []);
 
-  const clearAll = useCallback(() => {
+  const clearAll = useCallback(async () => {
+    if (!user) return;
+    await supabase.from('notifications').delete().eq('user_id', user.id);
     setNotifications([]);
-  }, []);
+  }, [user]);
 
   return (
     <NotificationContext.Provider
