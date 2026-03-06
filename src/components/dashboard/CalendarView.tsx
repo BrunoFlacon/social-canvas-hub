@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -24,7 +24,7 @@ import { socialPlatforms } from "@/components/icons/SocialIcons";
 import { ScheduledPost } from "@/hooks/useScheduledPosts";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { usePublisher } from "@/hooks/usePublisher";
-import { supabase } from "@/integrations/supabase/client";
+
 import {
   DropdownMenu,
   DropdownMenuContent,
