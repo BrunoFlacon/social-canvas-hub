@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { 
   User, 
@@ -20,6 +20,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useSocialConnections } from "@/hooks/useSocialConnections";
+import { supabase } from "@/integrations/supabase/client";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 
 const platformConfigs = [
@@ -52,13 +54,51 @@ export const SettingsView = () => {
   });
 
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSaveProfile = () => {
-    updateProfile({ name: profileData.name });
-    toast({
-      title: "Perfil atualizado",
-      description: "Suas informações foram salvas com sucesso."
-    });
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast({ title: "Formato inválido", description: "Selecione uma imagem.", variant: "destructive" });
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const ext = file.name.split('.').pop();
+      const filePath = `avatars/${user.id}/avatar.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('media')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage.from('media').getPublicUrl(filePath);
+      const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+
+      const success = await updateProfile({ avatar_url: avatarUrl });
+      if (success) {
+        toast({ title: "Foto atualizada", description: "Sua foto de perfil foi alterada." });
+      }
+    } catch (error) {
+      console.error('Avatar upload error:', error);
+      toast({ title: "Erro no upload", description: "Não foi possível enviar a foto.", variant: "destructive" });
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    const success = await updateProfile({ name: profileData.name, bio: profileData.bio });
+    if (success) {
+      toast({ title: "Perfil atualizado", description: "Suas informações foram salvas com sucesso." });
+    } else {
+      toast({ title: "Erro", description: "Não foi possível salvar.", variant: "destructive" });
+    }
   };
 
   const handleConnectApi = async (platform: string) => {
@@ -123,11 +163,27 @@ export const SettingsView = () => {
             
             <div className="flex items-start gap-6 mb-6">
               <div className="relative">
-                <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-3xl font-bold">
-                  {profileData.name.charAt(0) || "U"}
-                </div>
-                <button className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground hover:opacity-90 transition-opacity">
-                  <Camera className="w-4 h-4" />
+                <Avatar className="w-24 h-24 rounded-2xl">
+                  {profile?.avatar_url && (
+                    <AvatarImage src={profile.avatar_url} alt={profileData.name} className="rounded-2xl object-cover" />
+                  )}
+                  <AvatarFallback className="rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 text-3xl font-bold">
+                    {profileData.name.charAt(0) || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarUpload}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingAvatar}
+                  className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {uploadingAvatar ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
                 </button>
               </div>
               <div className="flex-1">

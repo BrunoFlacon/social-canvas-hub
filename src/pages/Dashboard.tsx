@@ -9,6 +9,7 @@ import {
 import { useWebPushNotifications } from "@/hooks/useWebPushNotifications";
 import { useSocialConnections } from "@/hooks/useSocialConnections";
 import { useScheduledPosts } from "@/hooks/useScheduledPosts";
+import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
@@ -24,9 +25,11 @@ import { DocumentsView } from "@/components/dashboard/DocumentsView";
 import { SettingsView } from "@/components/dashboard/SettingsView";
 import { MediaGalleryView } from "@/components/dashboard/MediaGalleryView";
 import { NotificationsPanel } from "@/components/dashboard/NotificationsPanel";
+import { NotificationsFullView } from "@/components/dashboard/NotificationsFullView";
 import { socialPlatforms } from "@/components/icons/SocialIcons";
 import { cn } from "@/lib/utils";
 import { ScheduledPost } from "@/hooks/useScheduledPosts";
+import { useNavigate } from "react-router-dom";
 
 const Dashboard = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -34,6 +37,9 @@ const Dashboard = () => {
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
   const [preSelectedDate, setPreSelectedDate] = useState<Date | null>(null);
   const [editingPost, setEditingPost] = useState<ScheduledPost | null>(null);
+
+  const { logout } = useAuth();
+  const navigate = useNavigate();
 
   useWebPushNotifications();
 
@@ -55,6 +61,11 @@ const Dashboard = () => {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
 
   const isConnected = (platformId: string) =>
     connections.some(c => c.platform === platformId && c.is_connected);
@@ -158,12 +169,7 @@ const Dashboard = () => {
         return <MediaGalleryView />;
 
       case "notifications":
-        return (
-          <div>
-            <h1 className="font-display font-bold text-3xl mb-2">Notificações</h1>
-            <p className="text-muted-foreground mb-6">Veja todas as suas notificações</p>
-          </div>
-        );
+        return <NotificationsFullView />;
 
       default:
         return (
@@ -245,7 +251,7 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onLogout={handleLogout} />
       <div className="pl-64 transition-all duration-300">
         <Header onNotificationsClick={() => setShowNotifications(true)} />
         <main className="p-8">

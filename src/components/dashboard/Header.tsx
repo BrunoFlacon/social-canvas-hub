@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
-import { Bell, Search, User, ChevronDown } from "lucide-react";
+import { Bell, Search, ChevronDown } from "lucide-react";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 interface HeaderProps {
   onNotificationsClick?: () => void;
@@ -9,7 +10,10 @@ interface HeaderProps {
 
 export const Header = ({ onNotificationsClick }: HeaderProps) => {
   const { unreadCount } = useNotifications();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+
+  const displayName = profile?.name || user?.email?.split('@')[0] || "Usuário";
+  const initials = displayName.charAt(0).toUpperCase();
 
   return (
     <motion.header
@@ -40,11 +44,16 @@ export const Header = ({ onNotificationsClick }: HeaderProps) => {
         </button>
 
         <div className="flex items-center gap-3 pl-3 border-l border-border">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-lg font-bold text-primary-foreground">
-            {user?.email?.charAt(0)?.toUpperCase() || "U"}
-          </div>
+          <Avatar className="w-10 h-10 rounded-xl">
+            {profile?.avatar_url && (
+              <AvatarImage src={profile.avatar_url} alt={displayName} className="rounded-xl object-cover" />
+            )}
+            <AvatarFallback className="rounded-xl bg-gradient-to-br from-primary to-accent text-lg font-bold text-primary-foreground">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
           <div className="hidden md:block">
-            <p className="text-sm font-medium">{user?.email?.split('@')[0] || "Usuário"}</p>
+            <p className="text-sm font-medium">{displayName}</p>
             <p className="text-xs text-muted-foreground">Administrador</p>
           </div>
           <ChevronDown className="w-4 h-4 text-muted-foreground" />
