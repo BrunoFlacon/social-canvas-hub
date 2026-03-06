@@ -79,12 +79,16 @@ const Dashboard = () => {
               onPostSaved={() => {
                 setEditingPost(null);
                 setPreSelectedDate(null);
+                scheduledPosts.refetch();
               }}
               onBackToCalendar={editingPost || preSelectedDate ? () => {
                 setEditingPost(null);
                 setPreSelectedDate(null);
                 setActiveTab("calendar");
               } : undefined}
+              createPost={scheduledPosts.createPost}
+              updatePost={scheduledPosts.updatePost}
+              submitForApproval={scheduledPosts.submitForApproval}
             />
           </div>
         );
