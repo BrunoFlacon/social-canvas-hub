@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { socialPlatforms, SocialPlatformId } from "@/components/icons/SocialIcons";
 import { useMediaUpload, type UploadedMedia } from "@/hooks/useMediaUpload";
 import { BulkUploadDialog } from "@/components/dashboard/BulkUploadDialog";
-import { useScheduledPosts, ScheduledPost } from "@/hooks/useScheduledPosts";
+import { ScheduledPost, CreatePostInput } from "@/hooks/useScheduledPosts";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAIContent } from "@/hooks/useAIContent";
@@ -138,6 +138,9 @@ interface CreatePostPanelProps {
   editingPost?: ScheduledPost | null;
   onPostSaved?: () => void;
   onBackToCalendar?: () => void;
+  createPost: (input: CreatePostInput) => Promise<ScheduledPost | null>;
+  updatePost: (postId: string, updates: Partial<CreatePostInput>) => Promise<boolean>;
+  submitForApproval: (postId: string) => Promise<boolean>;
 }
 
 export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackToCalendar }: CreatePostPanelProps) => {

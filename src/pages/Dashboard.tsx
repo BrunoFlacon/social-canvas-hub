@@ -125,6 +125,13 @@ const Dashboard = () => {
       case "calendar":
         return (
           <CalendarView
+            posts={scheduledPosts.posts}
+            loading={scheduledPosts.loading}
+            deletePost={scheduledPosts.deletePost}
+            submitForApproval={scheduledPosts.submitForApproval}
+            approvePost={scheduledPosts.approvePost}
+            rejectPost={scheduledPosts.rejectPost}
+            refetch={scheduledPosts.refetch}
             onCreatePost={(date?: Date) => {
               setEditingPost(null);
               setPreSelectedDate(date || null);
