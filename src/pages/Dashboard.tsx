@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { 
   Eye, 
@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { useWebPushNotifications } from "@/hooks/useWebPushNotifications";
 import { useSocialConnections } from "@/hooks/useSocialConnections";
+import { useScheduledPosts } from "@/hooks/useScheduledPosts";
+import { supabase } from "@/integrations/supabase/client";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { StatsCard } from "@/components/dashboard/StatsCard";
@@ -36,6 +38,23 @@ const Dashboard = () => {
   useWebPushNotifications();
 
   const { connections, initiateOAuth, disconnect } = useSocialConnections();
+  const scheduledPosts = useScheduledPosts();
+
+  // Realtime subscription for scheduled_posts - shared across all views
+  const refetchRef = useRef(scheduledPosts.refetch);
+  useEffect(() => { refetchRef.current = scheduledPosts.refetch; }, [scheduledPosts.refetch]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('dashboard-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'scheduled_posts' },
+        () => { refetchRef.current(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   const isConnected = (platformId: string) =>
     connections.some(c => c.platform === platformId && c.is_connected);
