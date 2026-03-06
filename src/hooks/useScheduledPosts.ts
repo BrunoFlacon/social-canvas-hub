@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { useNotifications } from '@/contexts/NotificationContext';
 
 export interface ScheduledPost {
   id: string;
@@ -34,6 +35,7 @@ export function useScheduledPosts() {
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const { toast } = useToast();
+  const { addNotification } = useNotifications();
 
   const fetchPosts = useCallback(async () => {
     if (!user) {
@@ -264,6 +266,7 @@ export function useScheduledPosts() {
       if (error) throw error;
       await fetchPosts();
       toast({ title: "Enviado para aprovação", description: "O post aguarda revisão do editor." });
+      addNotification({ type: 'info', title: 'Post enviado para aprovação', message: 'Seu post foi enviado e aguarda revisão de um editor.' });
       return true;
     } catch (error) {
       console.error('Error submitting for approval:', error);
@@ -283,6 +286,7 @@ export function useScheduledPosts() {
       if (error) throw error;
       await fetchPosts();
       toast({ title: "Post aprovado!", description: "O post foi aprovado e está agendado." });
+      addNotification({ type: 'success', title: 'Post aprovado', message: 'Seu post foi aprovado por um editor e está agendado para publicação.' });
       return true;
     } catch (error) {
       console.error('Error approving post:', error);
@@ -302,6 +306,7 @@ export function useScheduledPosts() {
       if (error) throw error;
       await fetchPosts();
       toast({ title: "Post rejeitado", description: "O post foi devolvido para revisão." });
+      addNotification({ type: 'warning', title: 'Post rejeitado', message: `Seu post foi rejeitado. Motivo: ${reason}` });
       return true;
     } catch (error) {
       console.error('Error rejecting post:', error);
