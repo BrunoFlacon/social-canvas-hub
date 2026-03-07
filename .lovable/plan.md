@@ -1,139 +1,86 @@
+# Plano: Fluxo de Aprovacao Editorial + Indicadores Visuais no Calendario
 
+## O que sera feito
 
-# Plano: Correcoes Abrangentes — Perfil, Notificacoes, Stories/Lives, Documentos, Roles e Sincronismo
+continue a geração da instrução anterior e implemente o plano a seguir
 
-## Problemas Identificados
+### 1. Novo status "pending_approval" no fluxo editorial
 
-1. **Notificacoes — historico sumiu**: O `NotificationsPanel` tem botao "Ver todas as notificacoes" que apenas chama `onClose()` sem navegar para a aba `notifications`. A `NotificationsFullView` esta renderizada no Dashboard mas nao recebe navegacao do painel.
+Adicionar um novo status ao fluxo de publicacoes para suportar o ciclo jornalistico: **Rascunho -> Aguardando Aprovacao -> Aprovado/Agendado -> Publicado**.
 
-2. **Role do usuario nao atribuido**: A tabela `user_roles` esta vazia — o usuario `b6333d5f-fc76-4c7e-ab0b-c7b6f39b422b` nao tem nenhum papel. Botoes Aprovar/Rejeitar nunca aparecem.
+**Migracao de banco de dados:**
 
-3. **Stories & Lives — tudo mock**: `StoriesLivesView` usa dados hardcoded, botoes "Novo Story" e "Agendar Live" nao fazem nada. Nao ha persistencia.
+- Nenhuma alteracao de schema necessaria: o campo `status` da tabela `scheduled_posts` ja e do tipo `text`, entao novos valores como `pending_approval` e `rejected` podem ser usados diretamente.
 
-4. **Documentos — tudo mock**: `DocumentsView` usa dados hardcoded, upload nao funciona, botoes de download/delete/visualizar nao fazem nada.
+**Arquivo: `src/hooks/useScheduledPosts.ts**`
 
-5. **Redes Sociais — falta sincronismo com criacao de post**: Ao criar post, as plataformas selecionadas nao mostram se estao conectadas ou nao.
+- Expandir o tipo `status` para incluir `'pending_approval' | 'rejected'`
+- Adicionar funcoes `submitForApproval(postId)` e `approvePost(postId)` / `rejectPost(postId, reason)`
 
-6. **Perfil/Avatar**: Funciona no codigo mas usuario reporta que nao consegue trocar foto. Pode ser problema de bucket/CORS ou falta de feedback visual.
+### 2. Atualizar statusConfig no CalendarView
 
----
+**Arquivo: `src/components/dashboard/CalendarView.tsx**`
 
-## Correcoes Planejadas
+Adicionar configs para os novos status:
 
-### 1. Atribuir papel 'admin' ao usuario atual
-- INSERT na tabela `user_roles` para o usuario `b6333d5f-fc76-4c7e-ab0b-c7b6f39b422b` com role `admin`
-- Isso habilita botoes Aprovar/Rejeitar no calendario
+- `pending_approval`: icone `Clock` com cor laranja, label "Aguardando Aprovacao"
+- `rejected`: icone `AlertCircle` com cor vermelha escura, label "Rejeitado"
 
-### 2. Auto-atribuicao de role padrao ao registrar
-- Criar trigger `on_auth_user_created` que insere automaticamente role `journalist` para novos usuarios
-- Migration SQL com funcao + trigger
+Adicionar acoes no dropdown de cada post:
 
-### 3. Corrigir navegacao NotificationsPanel → aba Notificacoes
-- `NotificationsPanel`: receber `onViewAll` callback como prop
-- `Dashboard`: passar callback que seta `activeTab("notifications")` e fecha o painel
-- Botao "Ver todas" no painel navega para a pagina completa de notificacoes
+- "Enviar para aprovacao" (quando status e `draft`)
+- "Aprovar" e "Rejeitar" (quando status e `pending_approval`)
 
-### 4. Stories & Lives — persistencia com banco
-- Criar tabela `stories_lives` com colunas: id, user_id, type (story/live), platform, title, content, thumbnail_url, status, scheduled_at, completed_at, viewers, likes, comments, created_at
-- RLS: usuarios so veem seus proprios dados
-- Atualizar `StoriesLivesView` para CRUD real com formularios de criacao
-- Habilitar realtime
+### 3. Indicadores visuais ricos nos quadradinhos do calendario
 
-### 5. Documentos — persistencia com storage
-- Criar tabela `documents` com colunas: id, user_id, name, file_url, file_type, file_size, downloads, created_at
-- RLS: usuarios so veem seus proprios documentos
-- Atualizar `DocumentsView`: upload real para bucket `media`, download, delete, preview funcional
+**Arquivo: `src/components/dashboard/CalendarView.tsx**`
 
-### 6. Indicar conexao das redes no CreatePostPanel
-- No grid de plataformas do `CreatePostPanel`, mostrar badge de "conectado" ou "nao conectado"
-- Receber `connections` como prop do Dashboard ou usar `useSocialConnections` diretamente
+Substituir os pontos coloridos simples por mini-icones de status nos quadradinhos dos dias:
 
-### 7. Garantir avatar upload funciona
-- Verificar se o caminho `avatars/` no bucket `media` funciona corretamente
-- Adicionar tratamento de erro mais claro no `SettingsView`
+- Cada post mostrara um pequeno icone (CheckCircle2, Clock, Edit, AlertCircle, etc.) colorido dentro do quadradinho do dia
+- Agrupar por status quando houver muitos posts (ex: "2x publicado, 1x rascunho")
+- Mostrar contagem total quando houver mais de 4 posts no dia
+
+### 4. Painel de aprovacao no CreatePostPanel
+
+**Arquivo: `src/components/dashboard/CreatePostPanel.tsx**`
+
+- Adicionar botao "Enviar para Aprovacao" ao lado de "Salvar Rascunho"
+- Quando o post estiver com status `pending_approval`, mostrar botoes "Aprovar" e "Rejeitar" (simulando o papel do editor)
+- Campo de motivo de rejeicao ao rejeitar
+
+### 5. Acoes de aprovacao no dialogo de detalhes
+
+**Arquivo: `src/components/dashboard/CalendarView.tsx**`
+
+No dialogo de detalhes do post, adicionar botoes contextuais:
+
+- Post `draft`: "Enviar para Aprovacao"
+- Post `pending_approval`: "Aprovar" e "Rejeitar"
+- Post `rejected`: Mostrar motivo da rejeicao + "Editar e Reenviar"
 
 ---
 
 ## Detalhes Tecnicos
 
-### Migration 1 — Stories/Lives table
-```sql
-CREATE TABLE public.stories_lives (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  type text NOT NULL DEFAULT 'story',
-  platform text NOT NULL,
-  title text NOT NULL,
-  content text,
-  thumbnail_url text,
-  media_url text,
-  status text NOT NULL DEFAULT 'draft',
-  scheduled_at timestamptz,
-  completed_at timestamptz,
-  viewers integer DEFAULT 0,
-  likes integer DEFAULT 0,
-  comments integer DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.stories_lives ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users can view own stories_lives" ON public.stories_lives FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY "Users can insert own stories_lives" ON public.stories_lives FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can update own stories_lives" ON public.stories_lives FOR UPDATE TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY "Users can delete own stories_lives" ON public.stories_lives FOR DELETE TO authenticated USING (auth.uid() = user_id);
-```
-
-### Migration 2 — Documents table
-```sql
-CREATE TABLE public.documents (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  name text NOT NULL,
-  file_url text NOT NULL,
-  file_type text NOT NULL DEFAULT 'other',
-  file_size integer DEFAULT 0,
-  downloads integer DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users can view own documents" ON public.documents FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY "Users can insert own documents" ON public.documents FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can update own documents" ON public.documents FOR UPDATE TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY "Users can delete own documents" ON public.documents FOR DELETE TO authenticated USING (auth.uid() = user_id);
-```
-
-### Migration 3 — Auto-assign journalist role trigger
-```sql
-CREATE OR REPLACE FUNCTION public.assign_default_role()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  INSERT INTO public.user_roles (user_id, role) VALUES (NEW.id, 'journalist');
-  RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER on_auth_user_created_assign_role
-  AFTER INSERT ON auth.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.assign_default_role();
-```
-
-### Data insert — Assign admin role to current user
-```sql
-INSERT INTO user_roles (user_id, role) VALUES ('b6333d5f-fc76-4c7e-ab0b-c7b6f39b422b', 'admin');
-```
-
 ### Arquivos editados:
-- `src/components/dashboard/NotificationsPanel.tsx` — adicionar `onViewAll` prop
-- `src/pages/Dashboard.tsx` — passar `onViewAll` ao NotificationsPanel
-- `src/components/dashboard/StoriesLivesView.tsx` — reescrever com CRUD real
-- `src/components/dashboard/DocumentsView.tsx` — reescrever com CRUD real
-- `src/components/dashboard/CreatePostPanel.tsx` — mostrar status de conexao das plataformas
 
+- `src/hooks/useScheduledPosts.ts` - Novos status e funcoes (submitForApproval, approvePost, rejectPost)
+- `src/components/dashboard/CalendarView.tsx` - Novos status no statusConfig, icones ricos nos dias, acoes de aprovacao
+- `src/components/dashboard/CreatePostPanel.tsx` - Botao "Enviar para Aprovacao"
+
+### Fluxo editorial completo:
+
+1. Jornalista cria pauta (rascunho) no calendario
+2. Desenvolve conteudo no painel de criacao
+3. Clica "Enviar para Aprovacao"
+4. Editor ve posts com status "Aguardando Aprovacao" no calendario (icone laranja)
+5. Editor aprova (muda para "scheduled") ou rejeita (muda para "rejected" com motivo)
+6. Se rejeitado, jornalista edita e reenvia
+7. Se aprovado, pode publicar imediatamente ou aguardar agendamento
+
+### Indicadores visuais nos quadradinhos:
+
+- Cada dia mostrara ate 4 mini-icones coloridos representando os posts daquele dia
+- Se houver mais de 4 posts, mostra 3 icones + badge "+N"
+- Icones usados: CheckCircle2 (publicado/verde), Clock (agendado/azul), Edit (rascunho/amarelo), AlertCircle (falha/vermelho), Loader2 (aguardando aprovacao/laranja), X (rejeitado/vermelho escuro)

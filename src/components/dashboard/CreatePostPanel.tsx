@@ -32,6 +32,7 @@ import { useNotifications } from "@/contexts/NotificationContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAIContent } from "@/hooks/useAIContent";
 import { usePublisher } from "@/hooks/usePublisher";
+import { useSocialConnections } from "@/hooks/useSocialConnections";
 import {
   Dialog,
   DialogContent,
@@ -175,6 +176,10 @@ export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackT
   const { toast } = useToast();
   const { generateContent, generating } = useAIContent();
   const { publishNow, publishing } = usePublisher();
+  const { connections } = useSocialConnections();
+
+  const isPlatformConnected = (platformId: string) =>
+    connections.some(c => c.platform === platformId && c.is_connected);
 
   const isEditing = !!editingPost;
 
@@ -465,6 +470,7 @@ export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackT
             {socialPlatforms.map((platform) => {
               const Icon = platform.icon;
               const isSelected = selectedPlatforms.includes(platform.id);
+              const connected = isPlatformConnected(platform.id);
               return (
                 <motion.button
                   key={platform.id}
@@ -472,17 +478,23 @@ export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackT
                   whileTap={{ scale: 0.95 }}
                   onClick={() => togglePlatform(platform.id)}
                   className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded-xl border transition-all",
+                    "flex items-center gap-2 px-3 py-2 rounded-xl border transition-all relative",
                     isSelected
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border hover:border-primary/50 text-muted-foreground"
                   )}
                 >
-                  <div className={cn(
-                    "w-6 h-6 rounded-md flex items-center justify-center",
-                    platform.color
-                  )}>
-                    <Icon className="w-3.5 h-3.5 text-white" />
+                  <div className="relative">
+                    <div className={cn(
+                      "w-6 h-6 rounded-md flex items-center justify-center",
+                      platform.color
+                    )}>
+                      <Icon className="w-3.5 h-3.5 text-white" />
+                    </div>
+                    <div className={cn(
+                      "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-background",
+                      connected ? "bg-green-500" : "bg-muted-foreground"
+                    )} />
                   </div>
                   <span className="text-sm font-medium">{platform.name}</span>
                   {isSelected && (
