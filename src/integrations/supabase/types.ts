@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      documents: {
+        Row: {
+          created_at: string
+          downloads: number | null
+          file_size: number | null
+          file_type: string
+          file_url: string
+          id: string
+          name: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          downloads?: number | null
+          file_size?: number | null
+          file_type?: string
+          file_url: string
+          id?: string
+          name: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          downloads?: number | null
+          file_size?: number | null
+          file_type?: string
+          file_url?: string
+          id?: string
+          name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       media: {
         Row: {
           created_at: string
@@ -245,6 +278,60 @@ export type Database = {
           token_expires_at?: string | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      stories_lives: {
+        Row: {
+          comments: number | null
+          completed_at: string | null
+          content: string | null
+          created_at: string
+          id: string
+          likes: number | null
+          media_url: string | null
+          platform: string
+          scheduled_at: string | null
+          status: string
+          thumbnail_url: string | null
+          title: string
+          type: string
+          user_id: string
+          viewers: number | null
+        }
+        Insert: {
+          comments?: number | null
+          completed_at?: string | null
+          content?: string | null
+          created_at?: string
+          id?: string
+          likes?: number | null
+          media_url?: string | null
+          platform: string
+          scheduled_at?: string | null
+          status?: string
+          thumbnail_url?: string | null
+          title: string
+          type?: string
+          user_id: string
+          viewers?: number | null
+        }
+        Update: {
+          comments?: number | null
+          completed_at?: string | null
+          content?: string | null
+          created_at?: string
+          id?: string
+          likes?: number | null
+          media_url?: string | null
+          platform?: string
+          scheduled_at?: string | null
+          status?: string
+          thumbnail_url?: string | null
+          title?: string
+          type?: string
+          user_id?: string
+          viewers?: number | null
         }
         Relationships: []
       }
