@@ -258,7 +258,11 @@ const Dashboard = () => {
           {renderContent()}
         </main>
       </div>
-      <NotificationsPanel isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
+      <NotificationsPanel
+        isOpen={showNotifications}
+        onClose={() => setShowNotifications(false)}
+        onViewAll={() => setActiveTab("notifications")}
+      />
     </div>
   );
 };

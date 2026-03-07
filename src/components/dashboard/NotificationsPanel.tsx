@@ -1,7 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Bell, 
-  Check, 
   CheckCheck, 
   Trash2, 
   X,
@@ -18,9 +17,10 @@ import { socialPlatforms } from "@/components/icons/SocialIcons";
 interface NotificationsPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  onViewAll?: () => void;
 }
 
-export const NotificationsPanel = ({ isOpen, onClose }: NotificationsPanelProps) => {
+export const NotificationsPanel = ({ isOpen, onClose, onViewAll }: NotificationsPanelProps) => {
   const { 
     notifications, 
     unreadCount, 
@@ -71,7 +71,6 @@ export const NotificationsPanel = ({ isOpen, onClose }: NotificationsPanelProps)
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -80,7 +79,6 @@ export const NotificationsPanel = ({ isOpen, onClose }: NotificationsPanelProps)
             onClick={onClose}
           />
           
-          {/* Panel */}
           <motion.div
             initial={{ opacity: 0, x: 20, scale: 0.95 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -98,10 +96,7 @@ export const NotificationsPanel = ({ isOpen, onClose }: NotificationsPanelProps)
                   </span>
                 )}
               </div>
-              <button
-                onClick={onClose}
-                className="p-1.5 rounded-lg hover:bg-muted transition-colors"
-              >
+              <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -109,17 +104,11 @@ export const NotificationsPanel = ({ isOpen, onClose }: NotificationsPanelProps)
             {/* Actions */}
             {notifications.length > 0 && (
               <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-b border-border">
-                <button
-                  onClick={markAllAsRead}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
+                <button onClick={markAllAsRead} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
                   <CheckCheck className="w-3.5 h-3.5" />
                   Marcar todas como lidas
                 </button>
-                <button
-                  onClick={clearAll}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive transition-colors"
-                >
+                <button onClick={clearAll} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive transition-colors">
                   <Trash2 className="w-3.5 h-3.5" />
                   Limpar tudo
                 </button>
@@ -132,13 +121,11 @@ export const NotificationsPanel = ({ isOpen, onClose }: NotificationsPanelProps)
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Bell className="w-12 h-12 text-muted-foreground mb-3" />
                   <p className="font-medium">Sem notificações</p>
-                  <p className="text-sm text-muted-foreground">
-                    Você está em dia!
-                  </p>
+                  <p className="text-sm text-muted-foreground">Você está em dia!</p>
                 </div>
               ) : (
                 <div className="divide-y divide-border">
-                  {notifications.map((notification) => {
+                  {notifications.slice(0, 10).map((notification) => {
                     const TypeIcon = getNotificationIcon(notification.type);
                     const PlatformIcon = getPlatformIcon(notification.platform);
                     
@@ -147,9 +134,8 @@ export const NotificationsPanel = ({ isOpen, onClose }: NotificationsPanelProps)
                         key={notification.id}
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, x: -100 }}
                         className={cn(
-                          "p-4 hover:bg-muted/30 transition-colors cursor-pointer relative",
+                          "p-4 hover:bg-muted/30 transition-colors cursor-pointer relative group",
                           !notification.read && "bg-primary/5"
                         )}
                         onClick={() => markAsRead(notification.id)}
@@ -159,10 +145,7 @@ export const NotificationsPanel = ({ isOpen, onClose }: NotificationsPanelProps)
                         )}
                         
                         <div className="flex gap-3 pl-3">
-                          <div className={cn(
-                            "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-                            getNotificationColor(notification.type)
-                          )}>
+                          <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0", getNotificationColor(notification.type))}>
                             <TypeIcon className="w-5 h-5" />
                           </div>
                           
@@ -173,24 +156,17 @@ export const NotificationsPanel = ({ isOpen, onClose }: NotificationsPanelProps)
                                 {formatTime(notification.timestamp)}
                               </span>
                             </div>
-                            <p className="text-sm text-muted-foreground mt-0.5">
-                              {notification.message}
-                            </p>
+                            <p className="text-sm text-muted-foreground mt-0.5">{notification.message}</p>
                             {PlatformIcon && (
                               <div className="flex items-center gap-1.5 mt-2">
                                 <PlatformIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                                <span className="text-xs text-muted-foreground capitalize">
-                                  {notification.platform}
-                                </span>
+                                <span className="text-xs text-muted-foreground capitalize">{notification.platform}</span>
                               </div>
                             )}
                           </div>
                           
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeNotification(notification.id);
-                            }}
+                            onClick={(e) => { e.stopPropagation(); removeNotification(notification.id); }}
                             className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all shrink-0"
                           >
                             <X className="w-3.5 h-3.5" />
@@ -206,7 +182,14 @@ export const NotificationsPanel = ({ isOpen, onClose }: NotificationsPanelProps)
             {/* Footer */}
             {notifications.length > 0 && (
               <div className="p-3 border-t border-border bg-muted/30">
-                <Button variant="ghost" className="w-full text-sm" onClick={onClose}>
+                <Button
+                  variant="ghost"
+                  className="w-full text-sm"
+                  onClick={() => {
+                    onViewAll?.();
+                    onClose();
+                  }}
+                >
                   Ver todas as notificações
                 </Button>
               </div>

@@ -32,6 +32,7 @@ import { useNotifications } from "@/contexts/NotificationContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAIContent } from "@/hooks/useAIContent";
 import { usePublisher } from "@/hooks/usePublisher";
+import { useSocialConnections } from "@/hooks/useSocialConnections";
 import {
   Dialog,
   DialogContent,
