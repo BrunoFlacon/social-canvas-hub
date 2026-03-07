@@ -176,6 +176,10 @@ export const CreatePostPanel = ({ initialDate, editingPost, onPostSaved, onBackT
   const { toast } = useToast();
   const { generateContent, generating } = useAIContent();
   const { publishNow, publishing } = usePublisher();
+  const { connections } = useSocialConnections();
+
+  const isPlatformConnected = (platformId: string) =>
+    connections.some(c => c.platform === platformId && c.is_connected);
 
   const isEditing = !!editingPost;
 
