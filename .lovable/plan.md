@@ -1,86 +1,119 @@
-# Plano: Fluxo de Aprovacao Editorial + Indicadores Visuais no Calendario
 
-## O que sera feito
 
-continue a geração da instrução anterior e implemente o plano a seguir
+# Plano: Mensageria Avançada, Chat, Histórico e Conexões Sociais
 
-### 1. Novo status "pending_approval" no fluxo editorial
+## Visão Geral
 
-Adicionar um novo status ao fluxo de publicacoes para suportar o ciclo jornalistico: **Rascunho -> Aguardando Aprovacao -> Aprovado/Agendado -> Publicado**.
-
-**Migracao de banco de dados:**
-
-- Nenhuma alteracao de schema necessaria: o campo `status` da tabela `scheduled_posts` ja e do tipo `text`, entao novos valores como `pending_approval` e `rejected` podem ser usados diretamente.
-
-**Arquivo: `src/hooks/useScheduledPosts.ts**`
-
-- Expandir o tipo `status` para incluir `'pending_approval' | 'rejected'`
-- Adicionar funcoes `submitForApproval(postId)` e `approvePost(postId)` / `rejectPost(postId, reason)`
-
-### 2. Atualizar statusConfig no CalendarView
-
-**Arquivo: `src/components/dashboard/CalendarView.tsx**`
-
-Adicionar configs para os novos status:
-
-- `pending_approval`: icone `Clock` com cor laranja, label "Aguardando Aprovacao"
-- `rejected`: icone `AlertCircle` com cor vermelha escura, label "Rejeitado"
-
-Adicionar acoes no dropdown de cada post:
-
-- "Enviar para aprovacao" (quando status e `draft`)
-- "Aprovar" e "Rejeitar" (quando status e `pending_approval`)
-
-### 3. Indicadores visuais ricos nos quadradinhos do calendario
-
-**Arquivo: `src/components/dashboard/CalendarView.tsx**`
-
-Substituir os pontos coloridos simples por mini-icones de status nos quadradinhos dos dias:
-
-- Cada post mostrara um pequeno icone (CheckCircle2, Clock, Edit, AlertCircle, etc.) colorido dentro do quadradinho do dia
-- Agrupar por status quando houver muitos posts (ex: "2x publicado, 1x rascunho")
-- Mostrar contagem total quando houver mais de 4 posts no dia
-
-### 4. Painel de aprovacao no CreatePostPanel
-
-**Arquivo: `src/components/dashboard/CreatePostPanel.tsx**`
-
-- Adicionar botao "Enviar para Aprovacao" ao lado de "Salvar Rascunho"
-- Quando o post estiver com status `pending_approval`, mostrar botoes "Aprovar" e "Rejeitar" (simulando o papel do editor)
-- Campo de motivo de rejeicao ao rejeitar
-
-### 5. Acoes de aprovacao no dialogo de detalhes
-
-**Arquivo: `src/components/dashboard/CalendarView.tsx**`
-
-No dialogo de detalhes do post, adicionar botoes contextuais:
-
-- Post `draft`: "Enviar para Aprovacao"
-- Post `pending_approval`: "Aprovar" e "Rejeitar"
-- Post `rejected`: Mostrar motivo da rejeicao + "Editar e Reenviar"
+O pedido abrange 4 grandes áreas: (1) expandir o sistema de mensageria com canais de transmissão específicos por rede, envio individual e chat, (2) persistir mensagens enviadas no banco com vínculo ao calendário, (3) adicionar tela de chat/histórico, e (4) expandir o OAuth para mais redes sociais.
 
 ---
 
-## Detalhes Tecnicos
+## 1. Expandir Plataformas de Mensageria
+
+**Problema**: Atualmente só existem 4 plataformas fixas (WhatsApp, Telegram, Facebook, Instagram). Faltam tipos específicos por rede (canais de transmissão no WhatsApp, canais no Facebook, etc.) e campo para redes customizadas.
+
+**Solução**:
+- Expandir `messagingPlatforms` no `MessagingView.tsx` para incluir subtipos corretos:
+  - WhatsApp: Grupos, Listas de Transmissão, Comunidades, Individual (número de telefone)
+  - Facebook: Grupos, Canais de Transmissão
+  - Instagram: Canais de Transmissão apenas
+  - Telegram: Grupos, Canais, Comunidades, Individual (username/número)
+- Adicionar opção "Outra rede" com campo de texto livre para nome da plataforma
+- Adicionar campo de número de telefone para envios individuais (WhatsApp/Telegram)
+- No dialog "Adicionar Canal", filtrar tipos válidos por plataforma selecionada
+
+---
+
+## 2. Persistir Mensagens no Banco — Tabela `messages`
+
+**Nova tabela**:
+```sql
+CREATE TABLE public.messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  channel_id uuid REFERENCES public.messaging_channels(id) ON DELETE SET NULL,
+  content text NOT NULL,
+  media_url text,
+  status text NOT NULL DEFAULT 'draft', -- draft, scheduled, sent, failed
+  scheduled_at timestamptz,
+  sent_at timestamptz,
+  recipient_phone text, -- para envios individuais
+  recipient_name text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+-- RLS: users see own messages only
+-- Enable realtime
+```
+
+Isso permite rascunhos, agendamentos e histórico de mensagens enviadas, vinculados ao calendário.
+
+---
+
+## 3. Tela de Chat / Histórico de Mensagens
+
+**Novo componente**: Seção dentro de `MessagingView` com abas:
+- **Canais** (atual): CRUD de canais/grupos
+- **Compor**: formulário para escrever e agendar mensagens (com seleção de canais/individuais)
+- **Histórico**: lista de todas as mensagens enviadas, estilo chat (balões), agrupadas por canal, com filtros por status (rascunho/agendada/enviada)
+
+O histórico mostrará as mensagens do banco em formato de conversa similar ao WhatsApp/Telegram, com timestamp, status e conteúdo.
+
+---
+
+## 4. Expandir OAuth para Mais Redes
+
+**Problema**: Atualmente o `social-oauth-init` só suporta Facebook, Instagram, Google, YouTube e Twitter. LinkedIn, TikTok, Pinterest, Snapchat, Threads, WhatsApp e Telegram não têm OAuth implementado.
+
+**Realidade das APIs**:
+- **LinkedIn**: Tem OAuth 2.0 padrão — implementável
+- **TikTok**: Tem OAuth 2.0 (TikTok Login Kit) — implementável, requer app ID e secret
+- **Pinterest**: Tem OAuth 2.0 — implementável, requer app ID e secret
+- **WhatsApp Business**: Usa Meta Business API (mesmo META_APP_ID) — implementável via Graph API
+- **Telegram**: Usa Bot API com token — não é OAuth, mas pode-se conectar via Bot Token
+- **Snapchat**: Tem Snap Kit OAuth — requer credenciais próprias
+- **Threads**: Usa Meta Graph API — implementável com mesmo META_APP_ID
+
+**Solução pragmática**:
+- Adicionar suporte OAuth no `social-oauth-init` para: LinkedIn, TikTok, Pinterest, Threads (via Meta)
+- Para WhatsApp: usar Meta Business API (mesmo app Meta), com campo para WhatsApp Business Phone Number ID
+- Para Telegram: adicionar campo para Bot Token (não é OAuth)
+- Para Snapchat: marcar como "requer credenciais adicionais" e solicitar secrets quando o usuário tentar conectar
+- Para "Website": não requer conexão OAuth
+
+**Secrets necessários** (novos):
+- `LINKEDIN_CLIENT_ID` e `LINKEDIN_CLIENT_SECRET`
+- `TIKTOK_CLIENT_KEY` e `TIKTOK_CLIENT_SECRET`
+- `PINTEREST_APP_ID` e `PINTEREST_APP_SECRET`
+
+Para esses, solicitarei ao usuário que configure antes de prosseguir com a implementação.
+
+---
+
+## 5. Vincular Mensagens ao Calendário
+
+As mensagens agendadas (status `scheduled`) aparecerão no `CalendarView` junto com os posts. Isso requer:
+- Buscar `messages` com `scheduled_at` no mês visível
+- Exibir no calendário com ícone diferenciado (MessageCircle)
+- Ao clicar, abrir o detalhe da mensagem
+
+---
+
+## Arquivos Editados/Criados
+
+### Migrations:
+1. Tabela `messages` com RLS + realtime
 
 ### Arquivos editados:
+- `src/components/dashboard/MessagingView.tsx` — reescrever com 3 abas (Canais, Compor, Histórico), tipos por plataforma, campo "outra rede", envio individual
+- `supabase/functions/social-oauth-init/index.ts` — adicionar LinkedIn, TikTok, Pinterest, Threads, WhatsApp Business
+- `supabase/functions/social-oauth-callback/index.ts` — adicionar handlers para novas plataformas
 
-- `src/hooks/useScheduledPosts.ts` - Novos status e funcoes (submitForApproval, approvePost, rejectPost)
-- `src/components/dashboard/CalendarView.tsx` - Novos status no statusConfig, icones ricos nos dias, acoes de aprovacao
-- `src/components/dashboard/CreatePostPanel.tsx` - Botao "Enviar para Aprovacao"
+### Arquivos novos:
+- Nenhum componente novo necessário — tudo dentro de `MessagingView`
 
-### Fluxo editorial completo:
+### Escopo desta implementação:
+1. Migration para tabela `messages`
+2. Reescrever `MessagingView` com canais expandidos, chat/histórico e composição com agendamento
+3. Adicionar LinkedIn e TikTok ao OAuth init/callback (as duas redes mais solicitadas que têm APIs públicas)
+4. Para as demais (Pinterest, Snapchat, Telegram), marcar como "configuração pendente" e solicitar secrets quando necessário
 
-1. Jornalista cria pauta (rascunho) no calendario
-2. Desenvolve conteudo no painel de criacao
-3. Clica "Enviar para Aprovacao"
-4. Editor ve posts com status "Aguardando Aprovacao" no calendario (icone laranja)
-5. Editor aprova (muda para "scheduled") ou rejeita (muda para "rejected" com motivo)
-6. Se rejeitado, jornalista edita e reenvia
-7. Se aprovado, pode publicar imediatamente ou aguardar agendamento
-
-### Indicadores visuais nos quadradinhos:
-
-- Cada dia mostrara ate 4 mini-icones coloridos representando os posts daquele dia
-- Se houver mais de 4 posts, mostra 3 icones + badge "+N"
-- Icones usados: CheckCircle2 (publicado/verde), Clock (agendado/azul), Edit (rascunho/amarelo), AlertCircle (falha/vermelho), Loader2 (aguardando aprovacao/laranja), X (rejeitado/vermelho escuro)
