@@ -72,7 +72,7 @@ export function useSocialConnections() {
       const data = await response.json();
 
       if (!response.ok) {
-        // Handle platforms that don't support OAuth
+        // Handle platforms that don't support OAuth or missing credentials
         if (data.requiresToken || data.requiresSetup) {
           toast({
             title: "Configuração necessária",
@@ -80,10 +80,25 @@ export function useSocialConnections() {
           });
           return;
         }
-        throw new Error(data.error || "Erro ao iniciar OAuth");
+        // Show the specific error from the server (e.g. missing API keys)
+        toast({
+          title: "Erro de configuração",
+          description: data.error || "Erro ao iniciar conexão. Verifique as credenciais nas configurações.",
+          variant: "destructive",
+        });
+        return;
       }
 
-      // Open OAuth in popup window instead of redirect (works inside iframe)
+      if (!data.authUrl) {
+        toast({
+          title: "Erro",
+          description: "URL de autenticação não recebida.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Open OAuth in popup window
       const width = 600;
       const height = 700;
       const left = window.screenX + (window.outerWidth - width) / 2;
@@ -96,47 +111,52 @@ export function useSocialConnections() {
       );
 
       if (!popup) {
-        // Popup blocked — fallback to redirect
+        // Popup blocked — inform user
         toast({
           title: "Popup bloqueado",
-          description: "Permita popups para este site ou tente novamente.",
+          description: "Permita popups para este site e tente novamente. Ou copie o link e abra manualmente.",
           variant: "destructive",
         });
-        // Fallback: redirect directly
-        window.location.href = data.authUrl;
         return;
       }
 
-      // Poll for popup close / completion
+      // Listen for message from popup
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type === "oauth-complete") {
+          window.removeEventListener("message", handleMessage);
+          fetchConnections();
+          toast({
+            title: "Conta conectada!",
+            description: `${platform} foi conectado com sucesso.`,
+          });
+        }
+      };
+      window.addEventListener("message", handleMessage);
+
+      // Poll for popup close
       const pollInterval = setInterval(async () => {
         try {
           if (popup.closed) {
             clearInterval(pollInterval);
-            // Refresh connections after popup closes
+            window.removeEventListener("message", handleMessage);
             await fetchConnections();
-            toast({
-              title: "Conexão atualizada",
-              description: `Verifique o status da conexão com ${platform}.`,
-            });
           }
         } catch {
-          // Cross-origin — popup is on external domain, just wait
+          // Cross-origin — popup is on external domain
         }
       }, 1000);
 
       // Safety timeout
       setTimeout(() => {
         clearInterval(pollInterval);
-        if (!popup.closed) {
-          // Don't force close — user might still be authenticating
-        }
-      }, 300000); // 5 min timeout
+        window.removeEventListener("message", handleMessage);
+      }, 300000);
 
     } catch (error) {
       console.error("OAuth init error:", error);
       toast({
         title: "Erro ao conectar",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
+        description: error instanceof Error ? error.message : "Erro desconhecido. Verifique sua conexão.",
         variant: "destructive",
       });
     }
