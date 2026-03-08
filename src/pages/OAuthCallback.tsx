@@ -2,13 +2,17 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2 } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
 const OAuthCallback = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [status, setStatus] = useState("Processando autenticação...");
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState(false);
+
+  const isPopup = window.opener !== null;
 
   useEffect(() => {
     const handleCallback = async () => {
@@ -17,12 +21,12 @@ const OAuthCallback = () => {
       const platform = searchParams.get("platform") || localStorage.getItem("oauth_platform") || "";
 
       if (!code || !state) {
-        toast({
-          title: "Erro de autenticação",
-          description: "Parâmetros OAuth inválidos.",
-          variant: "destructive",
-        });
-        navigate("/dashboard");
+        setStatus("Parâmetros OAuth inválidos.");
+        setError(true);
+        if (!isPopup) {
+          toast({ title: "Erro de autenticação", description: "Parâmetros OAuth inválidos.", variant: "destructive" });
+          setTimeout(() => navigate("/dashboard"), 2000);
+        }
         return;
       }
 
@@ -31,7 +35,7 @@ const OAuthCallback = () => {
 
         const { data: session } = await supabase.auth.getSession();
         if (!session?.session?.access_token) {
-          throw new Error("Sessão expirada");
+          throw new Error("Sessão expirada. Faça login novamente.");
         }
 
         const response = await fetch(
@@ -54,20 +58,43 @@ const OAuthCallback = () => {
 
         localStorage.removeItem("oauth_platform");
 
+        setStatus(`${data.pageName || platform} conectado com sucesso!`);
+        setDone(true);
+
         toast({
           title: "Conta conectada!",
           description: `${data.pageName || platform} foi conectado com sucesso.`,
         });
-      } catch (error) {
-        console.error("OAuth callback error:", error);
+
+        // If opened as popup, notify parent and close
+        if (isPopup) {
+          try {
+            window.opener?.postMessage({ type: "oauth-complete", platform }, window.location.origin);
+          } catch {}
+          setTimeout(() => window.close(), 1500);
+          return;
+        }
+      } catch (err) {
+        console.error("OAuth callback error:", err);
+        const msg = err instanceof Error ? err.message : "Erro desconhecido";
+        setStatus(msg);
+        setError(true);
+
         toast({
           title: "Erro ao conectar",
-          description: error instanceof Error ? error.message : "Erro desconhecido",
+          description: msg,
           variant: "destructive",
         });
+
+        if (isPopup) {
+          setTimeout(() => window.close(), 3000);
+          return;
+        }
       }
 
-      navigate("/dashboard");
+      if (!isPopup) {
+        setTimeout(() => navigate("/dashboard"), 2000);
+      }
     };
 
     handleCallback();
@@ -75,10 +102,25 @@ const OAuthCallback = () => {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center">
-      <div className="text-center space-y-4">
-        <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto" />
+      <div className="text-center space-y-4 max-w-sm mx-auto p-8">
+        {done ? (
+          <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto" />
+        ) : error ? (
+          <AlertCircle className="w-12 h-12 text-destructive mx-auto" />
+        ) : (
+          <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto" />
+        )}
         <p className="text-lg font-medium">{status}</p>
-        <p className="text-sm text-muted-foreground">Aguarde enquanto processamos...</p>
+        <p className="text-sm text-muted-foreground">
+          {isPopup
+            ? done ? "Esta janela será fechada automaticamente..." : error ? "Feche esta janela e tente novamente." : "Aguarde..."
+            : "Redirecionando para o dashboard..."}
+        </p>
+        {isPopup && (error || done) && (
+          <button onClick={() => window.close()} className="text-primary underline text-sm">
+            Fechar janela
+          </button>
+        )}
       </div>
     </div>
   );
