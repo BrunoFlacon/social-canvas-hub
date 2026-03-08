@@ -437,6 +437,7 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
             <div className="grid grid-cols-7 gap-2">
               {days.map((day, index) => {
                 const dayPosts = day ? postsByDay[day] : undefined;
+                const dayExtra = day ? extraItemsByDay[day] : undefined;
                 const isSelected = day === selectedDay;
                 const isToday = day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear();
 
@@ -455,7 +456,7 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
                     {day && (
                       <>
                         <span className={cn("text-sm font-medium", isToday && "text-accent", isSelected && "text-primary")}>{day}</span>
-                        {dayPosts && renderDayIndicators(dayPosts)}
+                        {(dayPosts || dayExtra) && renderDayIndicators(dayPosts || [], dayExtra)}
                       </>
                     )}
                   </motion.div>
