@@ -140,8 +140,16 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
       if (storyRes.data) setCalendarStories(storyRes.data);
     };
     fetchExtra();
-  }, [user, posts]); // re-fetch when posts change
-  
+  }, [user, posts]);
+
+  const { addNotification } = useNotifications();
+  const { publishNow, publishing } = usePublisher();
+  const { isEditor } = useUserRole();
+
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const firstDayOfMonth = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
 
   // Notify about failed posts
   const notifiedFailuresRef = useRef(new Set<string>());
