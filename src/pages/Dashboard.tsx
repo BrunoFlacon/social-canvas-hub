@@ -22,6 +22,7 @@ import { SocialNetworkCard } from "@/components/dashboard/SocialNetworkCard";
 import { CalendarView } from "@/components/dashboard/CalendarView";
 import { StoriesLivesView } from "@/components/dashboard/StoriesLivesView";
 import { DocumentsView } from "@/components/dashboard/DocumentsView";
+import { MessagingView } from "@/components/dashboard/MessagingView";
 import { SettingsView } from "@/components/dashboard/SettingsView";
 import { MediaGalleryView } from "@/components/dashboard/MediaGalleryView";
 import { NotificationsPanel } from "@/components/dashboard/NotificationsPanel";
@@ -158,6 +159,9 @@ const Dashboard = () => {
 
       case "stories":
         return <StoriesLivesView />;
+
+      case "messaging":
+        return <MessagingView />;
 
       case "documents":
         return <DocumentsView />;

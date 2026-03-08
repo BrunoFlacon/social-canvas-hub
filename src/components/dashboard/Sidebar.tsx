@@ -28,6 +28,7 @@ const menuItems = [
   { id: "calendar", icon: Calendar, label: "Calendário" },
   { id: "analytics", icon: BarChart3, label: "Analytics" },
   { id: "stories", icon: Radio, label: "Stories & Lives" },
+  { id: "messaging", icon: MessageCircle, label: "Mensagens" },
   { id: "documents", icon: FileText, label: "Documentos" },
   { id: "networks", icon: Share2, label: "Redes Sociais" },
 ];
