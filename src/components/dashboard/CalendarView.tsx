@@ -318,12 +318,13 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
   };
 
   // Render rich status icons for day cells
-  const renderDayIndicators = (dayPosts: ScheduledPost[]) => {
-    if (dayPosts.length === 0) return null;
+  const renderDayIndicators = (dayPosts: ScheduledPost[], dayExtraItems?: typeof extraItemsByDay[number]) => {
+    const totalExtra = dayExtraItems?.length || 0;
+    if (dayPosts.length === 0 && totalExtra === 0) return null;
 
     const maxIcons = 4;
     const showPosts = dayPosts.slice(0, dayPosts.length > maxIcons ? maxIcons - 1 : maxIcons);
-    const remaining = dayPosts.length - showPosts.length;
+    const remaining = dayPosts.length - showPosts.length + totalExtra;
 
     return (
       <div className="absolute bottom-1 left-1 right-1 flex items-center justify-center gap-0.5 flex-wrap">
@@ -332,13 +333,20 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
           if (!config) return null;
           const Icon = config.icon;
           return (
-            <Icon
-              key={i}
-              className={cn("w-3 h-3", config.color)}
-            />
+            <Icon key={i} className={cn("w-3 h-3", config.color)} />
           );
         })}
-        {remaining > 0 && (
+        {totalExtra > 0 && showPosts.length < maxIcons && (
+          <>
+            {dayExtraItems!.slice(0, maxIcons - showPosts.length).map((item, i) => {
+              if (item.type === "message") return <MessageCircle key={`m${i}`} className="w-3 h-3 text-primary" />;
+              if (item.type === "story") return <Radio key={`s${i}`} className="w-3 h-3 text-pink-500" />;
+              if (item.type === "live") return <Video key={`l${i}`} className="w-3 h-3 text-red-500" />;
+              return null;
+            })}
+          </>
+        )}
+        {remaining > (totalExtra > 0 && showPosts.length < maxIcons ? Math.min(totalExtra, maxIcons - showPosts.length) : 0) && (
           <span className="text-[8px] font-bold text-muted-foreground">+{remaining}</span>
         )}
       </div>
