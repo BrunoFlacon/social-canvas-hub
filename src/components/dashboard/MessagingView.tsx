@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import {
-  MessageCircle, Plus, Trash2, Send, Users, Radio as BroadcastIcon, Hash, User, Loader2, Clock, CheckCircle2, AlertCircle, Phone, Search, Filter, Calendar, Paperclip, Image, Video, Mic, FileText, X
+  MessageCircle, Plus, Trash2, Send, Users, Radio as BroadcastIcon, Hash, User, Loader2, Clock, CheckCircle2, AlertCircle, Phone, Search, Filter, Calendar, Paperclip, Image, Video, Mic, FileText, X, Edit, MoreHorizontal
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { socialPlatforms } from "@/components/icons/SocialIcons";
@@ -12,12 +12,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useNotifications } from "@/contexts/NotificationContext";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 
 interface MessagingChannel {
@@ -75,6 +79,7 @@ const messageStatusConfig: Record<string, { label: string; color: string; icon: 
 export const MessagingView = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { addNotification } = useNotifications();
   const [channels, setChannels] = useState<MessagingChannel[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,6 +115,12 @@ export const MessagingView = () => {
   // History filters
   const [historyFilter, setHistoryFilter] = useState("all");
   const [historySearch, setHistorySearch] = useState("");
+
+  // Edit message dialog
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [editScheduledAt, setEditScheduledAt] = useState("");
+  const [editStatus, setEditStatus] = useState("");
 
   const fetchChannels = async () => {
     if (!user) return;
@@ -171,6 +182,7 @@ export const MessagingView = () => {
       toast({ title: "Erro", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Canal adicionado!" });
+      addNotification({ type: "success", title: "Canal adicionado", message: `${formChannelName} foi adicionado como ${formChannelType}.`, platform: platformName });
       setShowAddDialog(false);
       resetAddForm();
     }
@@ -197,14 +209,16 @@ export const MessagingView = () => {
     setUploadingAttachment(true);
     try {
       const ext = file.name.split(".").pop();
-      const path = `messages/${user.id}/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from("media").upload(path, file);
+      const path = `${user.id}/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("media").upload(path, file, { cacheControl: '3600' });
       if (error) throw error;
       const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
       const fileType = file.type.startsWith("image") ? "image" : file.type.startsWith("video") ? "video" : file.type.startsWith("audio") ? "audio" : "file";
       setAttachments(prev => [...prev, { url: urlData.publicUrl, type: fileType, name: file.name }]);
+      toast({ title: "Arquivo anexado", description: file.name });
     } catch (err: any) {
       toast({ title: "Erro no upload", description: err.message, variant: "destructive" });
+      addNotification({ type: "error", title: "Erro no upload", message: `Não foi possível enviar ${file.name}: ${err.message}` });
     } finally {
       setUploadingAttachment(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -229,20 +243,24 @@ export const MessagingView = () => {
 
       if (sendMode === "individual") {
         if (!composeIndividualPhone.trim() || !composeMessage.trim()) return;
+        const status = composeScheduledAt ? "scheduled" : "sent";
         const { error } = await supabase.from("messages").insert({
           user_id: user.id,
           content: composeMessage.trim(),
           media_url: mediaUrl,
-          status: composeScheduledAt ? "scheduled" : "sent",
+          status,
           scheduled_at: composeScheduledAt || null,
           recipient_phone: composeIndividualPhone.trim(),
           recipient_name: composeIndividualName.trim() || null,
           platform: composeIndividualPlatform,
         } as any);
         if (error) throw error;
-        toast({ title: composeScheduledAt ? "Mensagem agendada!" : "Mensagem enviada!", description: `Para: ${composeIndividualPhone}` });
+        const title = composeScheduledAt ? "Mensagem agendada!" : "Mensagem enviada!";
+        toast({ title, description: `Para: ${composeIndividualPhone}` });
+        addNotification({ type: "success", title, message: `Para: ${composeIndividualPhone}`, platform: composeIndividualPlatform });
       } else {
         if (composeTarget.length === 0 || !composeMessage.trim()) return;
+        const status = composeScheduledAt ? "scheduled" : "sent";
         const inserts = composeTarget.map(channelId => {
           const ch = channels.find(c => c.id === channelId);
           return {
@@ -250,7 +268,7 @@ export const MessagingView = () => {
             channel_id: channelId,
             content: composeMessage.trim(),
             media_url: mediaUrl,
-            status: composeScheduledAt ? "scheduled" : "sent",
+            status,
             scheduled_at: composeScheduledAt || null,
             platform: ch?.platform || null,
           };
@@ -258,11 +276,14 @@ export const MessagingView = () => {
         const { error } = await supabase.from("messages").insert(inserts as any);
         if (error) throw error;
         const targetNames = channels.filter(c => composeTarget.includes(c.id)).map(c => c.channel_name).join(", ");
-        toast({ title: composeScheduledAt ? "Mensagens agendadas!" : "Mensagens enviadas!", description: `Para: ${targetNames}` });
+        const title = composeScheduledAt ? "Mensagens agendadas!" : "Mensagens enviadas!";
+        toast({ title, description: `Para: ${targetNames}` });
+        addNotification({ type: "success", title, message: `Para: ${targetNames}` });
       }
       resetCompose();
     } catch (error: any) {
       toast({ title: "Erro", description: error.message, variant: "destructive" });
+      addNotification({ type: "error", title: "Erro ao enviar mensagem", message: error.message });
     } finally {
       setComposeSending(false);
     }
@@ -295,6 +316,7 @@ export const MessagingView = () => {
         }
       }
       toast({ title: "Rascunho salvo!" });
+      addNotification({ type: "info", title: "Rascunho salvo", message: "Sua mensagem foi salva como rascunho." });
       resetCompose();
     } catch (error: any) {
       toast({ title: "Erro", description: error.message, variant: "destructive" });
@@ -307,14 +329,49 @@ export const MessagingView = () => {
     setComposeTarget([]); setComposeMessage(""); setComposeScheduledAt(""); setComposeIndividualPhone(""); setComposeIndividualName(""); setSendMode("channels"); setAttachments([]);
   };
 
+  // === CRUD operations for history ===
   const handleDeleteMessage = async (id: string) => {
     await supabase.from("messages").delete().eq("id", id);
     toast({ title: "Mensagem removida" });
+    addNotification({ type: "info", title: "Mensagem excluída", message: "A mensagem foi removida do histórico." });
   };
 
   const handleMarkSent = async (id: string) => {
     await supabase.from("messages").update({ status: "sent", sent_at: new Date().toISOString() } as any).eq("id", id);
     toast({ title: "Marcada como enviada" });
+    addNotification({ type: "success", title: "Mensagem publicada", message: "A mensagem foi marcada como enviada." });
+  };
+
+  const handleScheduleMessage = async (id: string, scheduledAt: string) => {
+    await supabase.from("messages").update({ status: "scheduled", scheduled_at: scheduledAt } as any).eq("id", id);
+    toast({ title: "Mensagem agendada" });
+    addNotification({ type: "info", title: "Mensagem agendada", message: `Agendada para ${new Date(scheduledAt).toLocaleString("pt-BR")}` });
+  };
+
+  const openEditMessage = (msg: Message) => {
+    setEditingMessage(msg);
+    setEditContent(msg.content);
+    setEditScheduledAt(msg.scheduled_at ? new Date(msg.scheduled_at).toISOString().slice(0, 16) : "");
+    setEditStatus(msg.status);
+  };
+
+  const handleSaveEditMessage = async () => {
+    if (!editingMessage) return;
+    const updates: any = { content: editContent.trim() };
+    if (editStatus === "scheduled" && editScheduledAt) {
+      updates.status = "scheduled";
+      updates.scheduled_at = new Date(editScheduledAt).toISOString();
+    } else if (editStatus === "sent") {
+      updates.status = "sent";
+      updates.sent_at = new Date().toISOString();
+    } else if (editStatus === "draft") {
+      updates.status = "draft";
+      updates.scheduled_at = null;
+    }
+    await supabase.from("messages").update(updates).eq("id", editingMessage.id);
+    toast({ title: "Mensagem atualizada" });
+    addNotification({ type: "success", title: "Mensagem editada", message: "As alterações foram salvas." });
+    setEditingMessage(null);
   };
 
   const getTypeIcon = (type: string) => channelTypes.find(ct => ct.id === type)?.icon || Users;
@@ -527,7 +584,6 @@ export const MessagingView = () => {
             )}
 
             <div className="mt-4 space-y-4">
-              {/* Message input with attachment bar */}
               <div>
                 <label className="text-sm font-medium mb-1 block">Mensagem</label>
                 <Textarea value={composeMessage} onChange={e => setComposeMessage(e.target.value)} placeholder="Digite sua mensagem..." rows={4} />
@@ -578,7 +634,6 @@ export const MessagingView = () => {
 
                 <div className="flex-1" />
 
-                {/* Schedule */}
                 <Input type="datetime-local" value={composeScheduledAt} onChange={e => setComposeScheduledAt(e.target.value)}
                   className="w-auto h-8 text-xs bg-transparent border-0 focus-visible:ring-0" />
               </div>
@@ -599,7 +654,7 @@ export const MessagingView = () => {
           </div>
         </TabsContent>
 
-        {/* ===== HISTORY TAB ===== */}
+        {/* ===== HISTORY TAB with full CRUD ===== */}
         <TabsContent value="history">
           <div className="space-y-4">
             <div className="flex flex-wrap gap-3 items-center">
@@ -668,16 +723,42 @@ export const MessagingView = () => {
                           </div>
                         </div>
 
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                          {(msg.status === "draft" || msg.status === "scheduled") && (
-                            <button onClick={() => handleMarkSent(msg.id)} className="p-1.5 rounded-lg hover:bg-green-500/10 hover:text-green-500 transition-all" title="Marcar como enviada">
-                              <CheckCircle2 className="w-4 h-4" />
+                        {/* CRUD actions dropdown */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="p-1.5 rounded-lg hover:bg-muted transition-all opacity-0 group-hover:opacity-100 shrink-0">
+                              <MoreHorizontal className="w-4 h-4" />
                             </button>
-                          )}
-                          <button onClick={() => handleDeleteMessage(msg.id)} className="p-1.5 rounded-lg hover:bg-destructive/20 hover:text-destructive transition-all" title="Excluir">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openEditMessage(msg)}>
+                              <Edit className="w-4 h-4 mr-2" /> Editar
+                            </DropdownMenuItem>
+                            {msg.status === "draft" && (
+                              <DropdownMenuItem onClick={() => handleMarkSent(msg.id)}>
+                                <Send className="w-4 h-4 mr-2" /> Publicar agora
+                              </DropdownMenuItem>
+                            )}
+                            {(msg.status === "draft" || msg.status === "failed") && (
+                              <DropdownMenuItem onClick={() => {
+                                const tomorrow = new Date();
+                                tomorrow.setDate(tomorrow.getDate() + 1);
+                                tomorrow.setHours(9, 0, 0, 0);
+                                handleScheduleMessage(msg.id, tomorrow.toISOString());
+                              }}>
+                                <Calendar className="w-4 h-4 mr-2" /> Agendar (amanhã 9h)
+                              </DropdownMenuItem>
+                            )}
+                            {msg.status === "scheduled" && (
+                              <DropdownMenuItem onClick={() => handleMarkSent(msg.id)}>
+                                <CheckCircle2 className="w-4 h-4 mr-2" /> Enviar agora
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem onClick={() => handleDeleteMessage(msg.id)} className="text-destructive">
+                              <Trash2 className="w-4 h-4 mr-2" /> Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </motion.div>
                   );
@@ -698,10 +779,10 @@ export const MessagingView = () => {
             <div>
               <label className="text-sm font-medium mb-1 block">Plataforma</label>
               <Select value={formPlatform} onValueChange={(v) => { setFormPlatform(v); setFormChannelType(messagingPlatformConfigs.find(p => p.id === v)?.types[0] || "group"); }}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                 <SelectContent>
-                  {messagingPlatformConfigs.map(mp => (
-                    <SelectItem key={mp.id} value={mp.id}>{mp.name}</SelectItem>
+                  {messagingPlatformConfigs.map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -709,42 +790,79 @@ export const MessagingView = () => {
             {formPlatform === "custom" && (
               <div>
                 <label className="text-sm font-medium mb-1 block">Nome da rede</label>
-                <Input value={formCustomPlatform} onChange={e => setFormCustomPlatform(e.target.value)} placeholder="Ex: Discord, Signal..." />
+                <Input value={formCustomPlatform} onChange={e => setFormCustomPlatform(e.target.value)} placeholder="Ex: Discord, Slack..." />
               </div>
             )}
-            <div>
-              <label className="text-sm font-medium mb-1 block">Nome do canal/grupo</label>
-              <Input value={formChannelName} onChange={e => setFormChannelName(e.target.value)} placeholder="Ex: Marketing Team" />
-            </div>
-            {availableTypes.length > 0 && (
-              <div>
-                <label className="text-sm font-medium mb-1 block">Tipo</label>
-                <Select value={formChannelType} onValueChange={setFormChannelType}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {availableTypes.map(typeId => {
-                      const ct = channelTypes.find(c => c.id === typeId);
-                      return ct ? <SelectItem key={ct.id} value={ct.id}>{ct.label}</SelectItem> : null;
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
+            {formPlatform && (
+              <>
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Tipo</label>
+                  <Select value={formChannelType} onValueChange={setFormChannelType}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {availableTypes.map(t => {
+                        const ct = channelTypes.find(c => c.id === t);
+                        return <SelectItem key={t} value={t}>{ct?.label || t}</SelectItem>;
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Nome do canal/grupo</label>
+                  <Input value={formChannelName} onChange={e => setFormChannelName(e.target.value)} placeholder="Nome do grupo ou canal" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-1 block">ID ou link (opcional)</label>
+                  <Input value={formChannelId} onChange={e => setFormChannelId(e.target.value)} placeholder="Ex: https://chat.whatsapp.com/... ou @canal" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Membros (opcional)</label>
+                  <Input type="number" value={formMembersCount} onChange={e => setFormMembersCount(e.target.value)} placeholder="0" />
+                </div>
+              </>
             )}
-            <div>
-              <label className="text-sm font-medium mb-1 block">ID do canal (opcional)</label>
-              <Input value={formChannelId} onChange={e => setFormChannelId(e.target.value)} placeholder="ID ou link do grupo" />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">Nº de membros (opcional)</label>
-              <Input type="number" value={formMembersCount} onChange={e => setFormMembersCount(e.target.value)} placeholder="0" />
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>Cancelar</Button>
             <Button onClick={handleAddChannel} disabled={submitting || !formPlatform || !formChannelName.trim()}>
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Adicionar
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Adicionar"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Message Dialog */}
+      <Dialog open={!!editingMessage} onOpenChange={(open) => { if (!open) setEditingMessage(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Mensagem</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium mb-1 block">Conteúdo</label>
+              <Textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={4} />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Status</label>
+              <Select value={editStatus} onValueChange={setEditStatus}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">Rascunho</SelectItem>
+                  <SelectItem value="scheduled">Agendada</SelectItem>
+                  <SelectItem value="sent">Enviada</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {editStatus === "scheduled" && (
+              <div>
+                <label className="text-sm font-medium mb-1 block">Agendar para</label>
+                <Input type="datetime-local" value={editScheduledAt} onChange={e => setEditScheduledAt(e.target.value)} />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingMessage(null)}>Cancelar</Button>
+            <Button onClick={handleSaveEditMessage} disabled={!editContent.trim()}>Salvar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
