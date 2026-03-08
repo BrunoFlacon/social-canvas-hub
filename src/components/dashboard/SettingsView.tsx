@@ -64,7 +64,7 @@ export const SettingsView = () => {
     setUploadingAvatar(true);
     try {
       const ext = file.name.split('.').pop();
-      const filePath = `avatars/${user.id}/avatar.${ext}`;
+      const filePath = `${user.id}/avatar.${ext}`;
       const { error: uploadError } = await supabase.storage.from('media').upload(filePath, file, { upsert: true });
       if (uploadError) throw uploadError;
       const { data: urlData } = supabase.storage.from('media').getPublicUrl(filePath);

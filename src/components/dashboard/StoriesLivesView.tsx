@@ -80,8 +80,8 @@ export const StoriesLivesView = () => {
     if (!file || !user) return;
     setUploadingThumb(true);
     const ext = file.name.split(".").pop();
-    const path = `stories/${user.id}/${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from("media").upload(path, file);
+    const path = `${user.id}/${Date.now()}_story.${ext}`;
+    const { error } = await supabase.storage.from("media").upload(path, file, { cacheControl: '3600' });
     if (error) {
       toast({ title: "Erro no upload", description: error.message, variant: "destructive" });
     } else {
