@@ -222,6 +222,29 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
     return grouped;
   }, [filteredPosts, month, year]);
 
+  // Extra items (messages and stories) grouped by day for calendar indicators
+  const extraItemsByDay = useMemo(() => {
+    const grouped: Record<number, { type: string; title: string; status: string; platform?: string; scheduled_at?: string }[]> = {};
+    calendarMessages.forEach(msg => {
+      if (!msg.scheduled_at) return;
+      const d = new Date(msg.scheduled_at);
+      if (d.getMonth() === month && d.getFullYear() === year) {
+        const day = d.getDate();
+        if (!grouped[day]) grouped[day] = [];
+        grouped[day].push({ type: "message", title: msg.content?.substring(0, 40) || "Mensagem", status: msg.status, platform: msg.platform, scheduled_at: msg.scheduled_at });
+      }
+    });
+    calendarStories.forEach(item => {
+      const d = item.scheduled_at ? new Date(item.scheduled_at) : new Date(item.created_at);
+      if (d.getMonth() === month && d.getFullYear() === year) {
+        const day = d.getDate();
+        if (!grouped[day]) grouped[day] = [];
+        grouped[day].push({ type: item.type, title: item.title, status: item.status, platform: item.platform, scheduled_at: item.scheduled_at });
+      }
+    });
+    return grouped;
+  }, [calendarMessages, calendarStories, month, year]);
+
   const goToPrevMonth = () => { setCurrentDate(new Date(year, month - 1, 1)); setSelectedDay(null); };
   const goToNextMonth = () => { setCurrentDate(new Date(year, month + 1, 1)); setSelectedDay(null); };
 
