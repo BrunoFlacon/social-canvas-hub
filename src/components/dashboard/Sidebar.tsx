@@ -10,7 +10,8 @@ import {
   FileText,
   Bell,
   LogOut,
-  ChevronLeft
+  ChevronLeft,
+  MessageCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
