@@ -1,17 +1,7 @@
 import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { 
-  User, 
-  Bell, 
-  Key, 
-  Shield, 
-  Globe, 
-  Save,
-  Camera,
-  Check,
-  AlertCircle,
-  Loader2,
-  Unplug
+  User, Bell, Key, Shield, Globe, Save, Camera, Check, AlertCircle, Loader2, Unplug, Info
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,13 +13,22 @@ import { useSocialConnections } from "@/hooks/useSocialConnections";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 const platformConfigs = [
-  { platform: 'facebook', name: 'Meta Business Suite (Facebook)', icon: '📘' },
-  { platform: 'instagram', name: 'Instagram Business', icon: '📸' },
-  { platform: 'google', name: 'Google API', icon: '🔍' },
-  { platform: 'youtube', name: 'YouTube Data API', icon: '▶️' },
-  { platform: 'twitter', name: 'X (Twitter) API', icon: '🐦' },
+  { platform: 'facebook', name: 'Facebook', icon: '📘', oauthSupported: true },
+  { platform: 'instagram', name: 'Instagram', icon: '📸', oauthSupported: true },
+  { platform: 'twitter', name: 'X (Twitter)', icon: '🐦', oauthSupported: true },
+  { platform: 'linkedin', name: 'LinkedIn', icon: '💼', oauthSupported: true, needsSecret: 'LINKEDIN_CLIENT_ID' },
+  { platform: 'youtube', name: 'YouTube', icon: '▶️', oauthSupported: true },
+  { platform: 'tiktok', name: 'TikTok', icon: '🎵', oauthSupported: true, needsSecret: 'TIKTOK_CLIENT_KEY' },
+  { platform: 'whatsapp', name: 'WhatsApp Business', icon: '💬', oauthSupported: true },
+  { platform: 'telegram', name: 'Telegram (Bot Token)', icon: '✈️', oauthSupported: false, note: 'Usa Bot Token' },
+  { platform: 'pinterest', name: 'Pinterest', icon: '📌', oauthSupported: true, needsSecret: 'PINTEREST_APP_ID' },
+  { platform: 'snapchat', name: 'Snapchat', icon: '👻', oauthSupported: false, note: 'Requer Snap Kit' },
+  { platform: 'threads', name: 'Threads', icon: '🧵', oauthSupported: true },
+  { platform: 'google', name: 'Google API', icon: '🔍', oauthSupported: true },
+  { platform: 'site', name: 'Website', icon: '🌐', oauthSupported: false, note: 'Sem conexão necessária' },
 ];
 
 export const SettingsView = () => {
@@ -45,47 +44,34 @@ export const SettingsView = () => {
   });
 
   const [notifications, setNotifications] = useState({
-    emailPosts: true,
-    emailEngagement: false,
-    pushPosts: true,
-    pushEngagement: true,
-    pushSchedule: true,
-    weeklyReport: true
+    emailPosts: true, emailEngagement: false, pushPosts: true, pushEngagement: true, pushSchedule: true, weeklyReport: true
   });
 
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Telegram bot token input
+  const [telegramToken, setTelegramToken] = useState("");
+  const [savingTelegram, setSavingTelegram] = useState(false);
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
-
     if (!file.type.startsWith('image/')) {
       toast({ title: "Formato inválido", description: "Selecione uma imagem.", variant: "destructive" });
       return;
     }
-
     setUploadingAvatar(true);
     try {
       const ext = file.name.split('.').pop();
       const filePath = `avatars/${user.id}/avatar.${ext}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('media')
-        .upload(filePath, file, { upsert: true });
-
+      const { error: uploadError } = await supabase.storage.from('media').upload(filePath, file, { upsert: true });
       if (uploadError) throw uploadError;
-
       const { data: urlData } = supabase.storage.from('media').getPublicUrl(filePath);
       const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`;
-
       const success = await updateProfile({ avatar_url: avatarUrl });
-      if (success) {
-        toast({ title: "Foto atualizada", description: "Sua foto de perfil foi alterada." });
-      }
+      if (success) toast({ title: "Foto atualizada" });
     } catch (error) {
-      console.error('Avatar upload error:', error);
       toast({ title: "Erro no upload", description: "Não foi possível enviar a foto.", variant: "destructive" });
     } finally {
       setUploadingAvatar(false);
@@ -94,11 +80,8 @@ export const SettingsView = () => {
 
   const handleSaveProfile = async () => {
     const success = await updateProfile({ name: profileData.name, bio: profileData.bio });
-    if (success) {
-      toast({ title: "Perfil atualizado", description: "Suas informações foram salvas com sucesso." });
-    } else {
-      toast({ title: "Erro", description: "Não foi possível salvar.", variant: "destructive" });
-    }
+    if (success) toast({ title: "Perfil atualizado" });
+    else toast({ title: "Erro", description: "Não foi possível salvar.", variant: "destructive" });
   };
 
   const handleConnectApi = async (platform: string) => {
@@ -112,262 +95,172 @@ export const SettingsView = () => {
     setConnectingPlatform(null);
   };
 
+  const handleSaveTelegram = async () => {
+    if (!user || !telegramToken.trim()) return;
+    setSavingTelegram(true);
+    try {
+      // Validate bot token
+      const res = await fetch(`https://api.telegram.org/bot${telegramToken.trim()}/getMe`);
+      const data = await res.json();
+      if (!data.ok) throw new Error("Token inválido");
+
+      const { error } = await supabase.from("social_connections").upsert({
+        user_id: user.id,
+        platform: "telegram",
+        access_token: telegramToken.trim(),
+        platform_user_id: String(data.result.id),
+        page_name: data.result.username || data.result.first_name,
+        is_connected: true,
+        updated_at: new Date().toISOString(),
+      } as any, { onConflict: "user_id,platform" });
+
+      if (error) throw error;
+      toast({ title: "Telegram conectado!", description: `Bot: @${data.result.username}` });
+      setTelegramToken("");
+    } catch (error: any) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    } finally {
+      setSavingTelegram(false);
+    }
+  };
+
   return (
     <div>
       <div className="mb-8">
-        <motion.h1
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="font-display font-bold text-3xl mb-2"
-        >
-          Configurações
-        </motion.h1>
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="text-muted-foreground"
-        >
-          Gerencie suas preferências e integrações
-        </motion.p>
+        <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="font-display font-bold text-3xl mb-2">Configurações</motion.h1>
+        <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-muted-foreground">Gerencie suas preferências e integrações</motion.p>
       </div>
 
       <Tabs defaultValue="profile" className="space-y-6">
         <TabsList className="bg-muted/50 p-1 rounded-xl">
-          <TabsTrigger value="profile" className="rounded-lg data-[state=active]:bg-background">
-            <User className="w-4 h-4 mr-2" />
-            Perfil
-          </TabsTrigger>
-          <TabsTrigger value="notifications" className="rounded-lg data-[state=active]:bg-background">
-            <Bell className="w-4 h-4 mr-2" />
-            Notificações
-          </TabsTrigger>
-          <TabsTrigger value="api" className="rounded-lg data-[state=active]:bg-background">
-            <Key className="w-4 h-4 mr-2" />
-            APIs
-          </TabsTrigger>
-          <TabsTrigger value="security" className="rounded-lg data-[state=active]:bg-background">
-            <Shield className="w-4 h-4 mr-2" />
-            Segurança
-          </TabsTrigger>
+          <TabsTrigger value="profile" className="rounded-lg data-[state=active]:bg-background"><User className="w-4 h-4 mr-2" />Perfil</TabsTrigger>
+          <TabsTrigger value="notifications" className="rounded-lg data-[state=active]:bg-background"><Bell className="w-4 h-4 mr-2" />Notificações</TabsTrigger>
+          <TabsTrigger value="api" className="rounded-lg data-[state=active]:bg-background"><Key className="w-4 h-4 mr-2" />APIs</TabsTrigger>
+          <TabsTrigger value="security" className="rounded-lg data-[state=active]:bg-background"><Shield className="w-4 h-4 mr-2" />Segurança</TabsTrigger>
         </TabsList>
 
         {/* Profile Tab */}
         <TabsContent value="profile">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass-card rounded-2xl border border-border p-6"
-          >
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card rounded-2xl border border-border p-6">
             <h3 className="font-display font-bold text-lg mb-6">Informações do Perfil</h3>
-            
             <div className="flex items-start gap-6 mb-6">
               <div className="relative">
                 <Avatar className="w-24 h-24 rounded-2xl">
-                  {profile?.avatar_url && (
-                    <AvatarImage src={profile.avatar_url} alt={profileData.name} className="rounded-2xl object-cover" />
-                  )}
-                  <AvatarFallback className="rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 text-3xl font-bold">
-                    {profileData.name.charAt(0) || "U"}
-                  </AvatarFallback>
+                  {profile?.avatar_url && <AvatarImage src={profile.avatar_url} alt={profileData.name} className="rounded-2xl object-cover" />}
+                  <AvatarFallback className="rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 text-3xl font-bold">{profileData.name.charAt(0) || "U"}</AvatarFallback>
                 </Avatar>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleAvatarUpload}
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingAvatar}
-                  className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50"
-                >
+                <input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                <button onClick={() => fileInputRef.current?.click()} disabled={uploadingAvatar}
+                  className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50">
                   {uploadingAvatar ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
                 </button>
               </div>
               <div className="flex-1">
                 <h4 className="font-medium mb-1">{profileData.name || "Usuário"}</h4>
                 <p className="text-sm text-muted-foreground">{profileData.email}</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Membro desde {user?.created_at ? new Date(user.created_at).toLocaleDateString('pt-BR') : 'hoje'}
-                </p>
               </div>
             </div>
-
             <div className="grid gap-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Nome</label>
-                  <Input
-                    value={profileData.name}
-                    onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
-                    className="bg-muted/50"
-                  />
+                  <Input value={profileData.name} onChange={(e) => setProfileData({ ...profileData, name: e.target.value })} className="bg-muted/50" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Email</label>
-                  <Input
-                    value={profileData.email}
-                    onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
-                    className="bg-muted/50"
-                    disabled
-                  />
+                  <Input value={profileData.email} disabled className="bg-muted/50" />
                 </div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Bio</label>
-                <textarea
-                  value={profileData.bio}
-                  onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
-                  className="w-full h-24 px-3 py-2 bg-muted/50 border border-border rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder="Conte um pouco sobre você..."
-                />
+                <textarea value={profileData.bio} onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
+                  className="w-full h-24 px-3 py-2 bg-muted/50 border border-border rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-primary/50" placeholder="Conte um pouco sobre você..." />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Website</label>
                 <div className="relative">
                   <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    value={profileData.website}
-                    onChange={(e) => setProfileData({ ...profileData, website: e.target.value })}
-                    className="pl-10 bg-muted/50"
-                    placeholder="https://seusite.com"
-                  />
+                  <Input value={profileData.website} onChange={(e) => setProfileData({ ...profileData, website: e.target.value })} className="pl-10 bg-muted/50" placeholder="https://seusite.com" />
                 </div>
               </div>
             </div>
-
             <div className="mt-6 flex justify-end">
-              <Button onClick={handleSaveProfile} className="bg-gradient-to-r from-primary to-accent">
-                <Save className="w-4 h-4 mr-2" />
-                Salvar alterações
-              </Button>
+              <Button onClick={handleSaveProfile} className="bg-gradient-to-r from-primary to-accent"><Save className="w-4 h-4 mr-2" />Salvar alterações</Button>
             </div>
           </motion.div>
         </TabsContent>
 
         {/* Notifications Tab */}
         <TabsContent value="notifications">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass-card rounded-2xl border border-border p-6"
-          >
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card rounded-2xl border border-border p-6">
             <h3 className="font-display font-bold text-lg mb-6">Preferências de Notificação</h3>
-            
             <div className="space-y-6">
               <div>
                 <h4 className="font-medium mb-4">Notificações por Email</h4>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">Posts publicados</p>
-                      <p className="text-sm text-muted-foreground">Receba confirmação quando posts forem publicados</p>
+                  {[
+                    { key: 'emailPosts', title: 'Posts publicados', desc: 'Receba confirmação quando posts forem publicados' },
+                    { key: 'emailEngagement', title: 'Engajamento', desc: 'Alertas de likes, comentários e compartilhamentos' },
+                    { key: 'weeklyReport', title: 'Relatório semanal', desc: 'Resumo de performance das suas redes' },
+                  ].map(item => (
+                    <div key={item.key} className="flex items-center justify-between">
+                      <div><p className="font-medium">{item.title}</p><p className="text-sm text-muted-foreground">{item.desc}</p></div>
+                      <Switch checked={notifications[item.key as keyof typeof notifications]} onCheckedChange={(checked) => setNotifications({ ...notifications, [item.key]: checked })} />
                     </div>
-                    <Switch
-                      checked={notifications.emailPosts}
-                      onCheckedChange={(checked) => setNotifications({ ...notifications, emailPosts: checked })}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">Engajamento</p>
-                      <p className="text-sm text-muted-foreground">Alertas de likes, comentários e compartilhamentos</p>
-                    </div>
-                    <Switch
-                      checked={notifications.emailEngagement}
-                      onCheckedChange={(checked) => setNotifications({ ...notifications, emailEngagement: checked })}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">Relatório semanal</p>
-                      <p className="text-sm text-muted-foreground">Resumo de performance das suas redes</p>
-                    </div>
-                    <Switch
-                      checked={notifications.weeklyReport}
-                      onCheckedChange={(checked) => setNotifications({ ...notifications, weeklyReport: checked })}
-                    />
-                  </div>
+                  ))}
                 </div>
               </div>
-
               <div className="border-t border-border pt-6">
                 <h4 className="font-medium mb-4">Notificações Push</h4>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">Posts publicados</p>
-                      <p className="text-sm text-muted-foreground">Notificação instantânea de publicações</p>
+                  {[
+                    { key: 'pushPosts', title: 'Posts publicados', desc: 'Notificação instantânea de publicações' },
+                    { key: 'pushEngagement', title: 'Engajamento em tempo real', desc: 'Alertas instantâneos de interações' },
+                    { key: 'pushSchedule', title: 'Lembretes de agendamento', desc: 'Aviso antes de posts agendados' },
+                  ].map(item => (
+                    <div key={item.key} className="flex items-center justify-between">
+                      <div><p className="font-medium">{item.title}</p><p className="text-sm text-muted-foreground">{item.desc}</p></div>
+                      <Switch checked={notifications[item.key as keyof typeof notifications]} onCheckedChange={(checked) => setNotifications({ ...notifications, [item.key]: checked })} />
                     </div>
-                    <Switch
-                      checked={notifications.pushPosts}
-                      onCheckedChange={(checked) => setNotifications({ ...notifications, pushPosts: checked })}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">Engajamento em tempo real</p>
-                      <p className="text-sm text-muted-foreground">Alertas instantâneos de interações</p>
-                    </div>
-                    <Switch
-                      checked={notifications.pushEngagement}
-                      onCheckedChange={(checked) => setNotifications({ ...notifications, pushEngagement: checked })}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">Lembretes de agendamento</p>
-                      <p className="text-sm text-muted-foreground">Aviso antes de posts agendados</p>
-                    </div>
-                    <Switch
-                      checked={notifications.pushSchedule}
-                      onCheckedChange={(checked) => setNotifications({ ...notifications, pushSchedule: checked })}
-                    />
-                  </div>
+                  ))}
                 </div>
               </div>
             </div>
           </motion.div>
         </TabsContent>
 
-        {/* API Tab */}
+        {/* API Tab — Expanded with all platforms */}
         <TabsContent value="api">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass-card rounded-2xl border border-border p-6"
-          >
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card rounded-2xl border border-border p-6">
             <div className="flex items-start justify-between mb-6">
               <div>
                 <h3 className="font-display font-bold text-lg">Integrações de API</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Conecte suas contas para publicação automática
-                </p>
+                <p className="text-sm text-muted-foreground mt-1">Conecte suas contas para publicação automática</p>
               </div>
               {connectionsLoading && <Loader2 className="w-5 h-5 animate-spin text-primary" />}
             </div>
             
-            <div className="space-y-4">
+            <div className="space-y-3">
               {platformConfigs.map((config) => {
                 const conn = connections.find(c => c.platform === config.platform && c.is_connected);
                 const isConnecting = connectingPlatform === config.platform;
                 
                 return (
-                  <div
-                    key={config.platform}
-                    className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border"
-                  >
+                  <div key={config.platform} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border">
                     <div className="flex items-center gap-4">
-                      <div className={cn(
-                        "w-10 h-10 rounded-lg flex items-center justify-center text-lg",
-                        conn ? "bg-green-500/10" : "bg-muted"
-                      )}>
+                      <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center text-lg", conn ? "bg-green-500/10" : "bg-muted")}>
                         {config.icon}
                       </div>
                       <div>
-                        <p className="font-medium">{config.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{config.name}</p>
+                          {!config.oauthSupported && config.note && (
+                            <Badge variant="outline" className="text-[10px]">{config.note}</Badge>
+                          )}
+                          {config.needsSecret && !conn && (
+                            <Badge variant="outline" className="text-[10px] text-yellow-600">Requer credenciais</Badge>
+                          )}
+                        </div>
                         <p className="text-sm text-muted-foreground">
                           {conn ? `Conectado${conn.page_name ? ` • ${conn.page_name}` : ''}` : "Não conectado"}
                         </p>
@@ -375,42 +268,34 @@ export const SettingsView = () => {
                     </div>
                     <div className="flex gap-2">
                       {conn && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => disconnect(config.platform)}
-                        >
-                          <Unplug className="w-4 h-4 mr-1" />
-                          Desconectar
+                        <Button variant="ghost" size="sm" onClick={() => disconnect(config.platform)}>
+                          <Unplug className="w-4 h-4 mr-1" /> Desconectar
                         </Button>
                       )}
-                      <Button
-                        variant={conn ? "outline" : "default"}
-                        size="sm"
-                        onClick={() => handleConnectApi(config.platform)}
-                        disabled={isConnecting}
-                        className={conn ? "" : "bg-gradient-to-r from-primary to-accent"}
-                      >
-                        {isConnecting ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : conn ? (
-                          <>
-                            <Check className="w-4 h-4 mr-2" />
-                            Reconectar
-                          </>
-                        ) : (
-                          "Conectar"
-                        )}
-                      </Button>
+                      {config.oauthSupported && (
+                        <Button variant={conn ? "outline" : "default"} size="sm" onClick={() => handleConnectApi(config.platform)} disabled={isConnecting}
+                          className={conn ? "" : "bg-gradient-to-r from-primary to-accent"}>
+                          {isConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : conn ? <><Check className="w-4 h-4 mr-2" />Reconectar</> : "Conectar"}
+                        </Button>
+                      )}
+                      {config.platform === "telegram" && !conn && (
+                        <div className="flex gap-2 items-center">
+                          <Input value={telegramToken} onChange={e => setTelegramToken(e.target.value)} placeholder="Bot Token" className="w-40 h-9 text-xs" />
+                          <Button size="sm" onClick={handleSaveTelegram} disabled={savingTelegram || !telegramToken.trim()}>
+                            {savingTelegram ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            <div className="mt-6 p-4 bg-muted/30 rounded-xl border border-dashed border-border">
-              <p className="text-sm text-muted-foreground text-center">
-                Configure as credenciais (META_APP_ID, GOOGLE_CLIENT_ID, etc.) nos secrets do projeto para habilitar as conexões OAuth reais.
+            <div className="mt-6 p-4 bg-muted/30 rounded-xl border border-dashed border-border flex items-start gap-3">
+              <Info className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
+              <p className="text-sm text-muted-foreground">
+                Para LinkedIn, TikTok e Pinterest, configure as credenciais (Client ID/Secret) nos secrets do projeto antes de conectar. WhatsApp usa Meta Business API (mesmo APP_ID do Facebook).
               </p>
             </div>
           </motion.div>
@@ -418,68 +303,16 @@ export const SettingsView = () => {
 
         {/* Security Tab */}
         <TabsContent value="security">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass-card rounded-2xl border border-border p-6"
-          >
-            <h3 className="font-display font-bold text-lg mb-6">Segurança da Conta</h3>
-            
-            <div className="space-y-6">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card rounded-2xl border border-border p-6">
+            <h3 className="font-display font-bold text-lg mb-6">Segurança</h3>
+            <div className="space-y-4">
               <div className="p-4 bg-muted/30 rounded-xl border border-border">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
-                    <Shield className="w-5 h-5 text-primary" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="font-medium mb-1">Alterar senha</h4>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Mantenha sua conta segura alterando sua senha periodicamente
-                    </p>
-                    <div className="grid gap-3">
-                      <Input type="password" placeholder="Senha atual" className="bg-muted/50" />
-                      <Input type="password" placeholder="Nova senha" className="bg-muted/50" />
-                      <Input type="password" placeholder="Confirmar nova senha" className="bg-muted/50" />
-                    </div>
-                    <Button className="mt-4" variant="outline">
-                      Atualizar senha
-                    </Button>
-                  </div>
-                </div>
+                <h4 className="font-medium mb-1">Autenticação</h4>
+                <p className="text-sm text-muted-foreground">Gerenciada pelo sistema de autenticação do projeto.</p>
               </div>
-
               <div className="p-4 bg-muted/30 rounded-xl border border-border">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
-                      <Key className="w-5 h-5 text-accent" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium mb-1">Autenticação de dois fatores</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Adicione uma camada extra de segurança à sua conta
-                      </p>
-                    </div>
-                  </div>
-                  <Switch />
-                </div>
-              </div>
-
-              <div className="p-4 bg-destructive/10 rounded-xl border border-destructive/20">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-destructive/20 flex items-center justify-center">
-                    <AlertCircle className="w-5 h-5 text-destructive" />
-                  </div>
-                  <div>
-                    <h4 className="font-medium mb-1 text-destructive">Excluir conta</h4>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Esta ação é irreversível. Todos os seus dados serão permanentemente removidos.
-                    </p>
-                    <Button variant="destructive" size="sm">
-                      Excluir minha conta
-                    </Button>
-                  </div>
-                </div>
+                <h4 className="font-medium mb-1">Sessões ativas</h4>
+                <p className="text-sm text-muted-foreground">Sua sessão atual está ativa desde {user?.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleDateString('pt-BR') : 'hoje'}.</p>
               </div>
             </div>
           </motion.div>
