@@ -8,15 +8,13 @@ import { socialPlatforms, SocialPlatformId } from "@/components/icons/SocialIcon
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 
 interface StoryLive {
   id: string;
@@ -36,8 +34,8 @@ interface StoryLive {
   created_at: string;
 }
 
-const storyPlatforms: SocialPlatformId[] = ["instagram", "facebook", "whatsapp", "snapchat"];
-const livePlatforms: SocialPlatformId[] = ["youtube", "instagram", "tiktok", "facebook"];
+const storyPlatforms: SocialPlatformId[] = ["instagram", "facebook", "whatsapp", "snapchat", "threads"];
+const livePlatforms: SocialPlatformId[] = ["youtube", "instagram", "tiktok", "facebook", "linkedin"];
 
 export const StoriesLivesView = () => {
   const { user } = useAuth();
@@ -47,7 +45,7 @@ export const StoriesLivesView = () => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createType, setCreateType] = useState<"story" | "live">("story");
   const [formTitle, setFormTitle] = useState("");
-  const [formPlatform, setFormPlatform] = useState<string>("");
+  const [formPlatforms, setFormPlatforms] = useState<string[]>([]);
   const [formContent, setFormContent] = useState("");
   const [formScheduledAt, setFormScheduledAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -68,7 +66,6 @@ export const StoriesLivesView = () => {
 
   useEffect(() => { fetchItems(); }, [user]);
 
-  // Realtime
   useEffect(() => {
     if (!user) return;
     const channel = supabase
@@ -94,23 +91,34 @@ export const StoriesLivesView = () => {
     setUploadingThumb(false);
   };
 
+  const togglePlatform = (pid: string) => {
+    setFormPlatforms(prev =>
+      prev.includes(pid) ? prev.filter(p => p !== pid) : [...prev, pid]
+    );
+  };
+
   const handleCreate = async () => {
-    if (!user || !formTitle.trim() || !formPlatform) return;
+    if (!user || !formTitle.trim() || formPlatforms.length === 0) return;
     setSubmitting(true);
-    const { error } = await supabase.from("stories_lives").insert({
+
+    // Create one entry per selected platform
+    const inserts = formPlatforms.map(platform => ({
       user_id: user.id,
       type: createType,
-      platform: formPlatform,
+      platform,
       title: formTitle.trim(),
       content: formContent.trim() || null,
       thumbnail_url: thumbnailUrl || null,
       status: formScheduledAt ? "scheduled" : "draft",
       scheduled_at: formScheduledAt ? new Date(formScheduledAt).toISOString() : null,
-    } as any);
+    }));
+
+    const { error } = await supabase.from("stories_lives").insert(inserts as any);
     if (error) {
       toast({ title: "Erro", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: createType === "story" ? "Story criado!" : "Live agendada!" });
+      const count = formPlatforms.length;
+      toast({ title: createType === "story" ? `${count} Story(s) criado(s)!` : `${count} Live(s) agendada(s)!` });
       setShowCreateDialog(false);
       resetForm();
     }
@@ -123,7 +131,7 @@ export const StoriesLivesView = () => {
   };
 
   const resetForm = () => {
-    setFormTitle(""); setFormPlatform(""); setFormContent(""); setFormScheduledAt(""); setThumbnailUrl("");
+    setFormTitle(""); setFormPlatforms([]); setFormContent(""); setFormScheduledAt(""); setThumbnailUrl("");
   };
 
   const stories = items.filter(i => i.type === "story");
@@ -158,7 +166,7 @@ export const StoriesLivesView = () => {
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
       <div className="mb-8">
         <h1 className="font-display font-bold text-3xl mb-2">Stories & Lives</h1>
-        <p className="text-muted-foreground">Gerencie seus stories e transmissões ao vivo</p>
+        <p className="text-muted-foreground">Gerencie seus stories e transmissões ao vivo em múltiplas redes</p>
       </div>
 
       {/* Stories Section */}
@@ -170,7 +178,7 @@ export const StoriesLivesView = () => {
             </div>
             <div>
               <h2 className="font-display font-bold text-xl">Stories</h2>
-              <p className="text-sm text-muted-foreground">Conteúdo efêmero para Instagram, Facebook e WhatsApp</p>
+              <p className="text-sm text-muted-foreground">Conteúdo efêmero para Instagram, Facebook, WhatsApp e mais</p>
             </div>
           </div>
           <Button onClick={() => openCreate("story")} className="bg-gradient-to-r from-[#F58529] via-[#DD2A7B] to-[#8134AF] hover:opacity-90 text-white gap-2">
@@ -243,7 +251,7 @@ export const StoriesLivesView = () => {
             </div>
             <div>
               <h2 className="font-display font-bold text-xl">Lives</h2>
-              <p className="text-sm text-muted-foreground">Transmissões ao vivo para YouTube, Instagram e TikTok</p>
+              <p className="text-sm text-muted-foreground">Transmissões ao vivo para YouTube, Instagram, TikTok e mais</p>
             </div>
           </div>
           <Button onClick={() => openCreate("live")} className="bg-gradient-to-r from-red-500 to-red-600 hover:opacity-90 text-white gap-2">
@@ -311,7 +319,7 @@ export const StoriesLivesView = () => {
         )}
       </div>
 
-      {/* Create Dialog */}
+      {/* Create Dialog — Multi-platform */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -323,16 +331,34 @@ export const StoriesLivesView = () => {
               <Input value={formTitle} onChange={e => setFormTitle(e.target.value)} placeholder={createType === "story" ? "Título do story" : "Título da live"} />
             </div>
             <div>
-              <label className="text-sm font-medium mb-1 block">Plataforma</label>
-              <Select value={formPlatform} onValueChange={setFormPlatform}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>
-                  {platformOptions.map(pid => {
-                    const p = socialPlatforms.find(sp => sp.id === pid);
-                    return p ? <SelectItem key={pid} value={pid}>{p.name}</SelectItem> : null;
-                  })}
-                </SelectContent>
-              </Select>
+              <label className="text-sm font-medium mb-2 block">Plataformas (selecione uma ou mais)</label>
+              <div className="grid grid-cols-2 gap-2">
+                {platformOptions.map(pid => {
+                  const p = socialPlatforms.find(sp => sp.id === pid);
+                  if (!p) return null;
+                  const Icon = p.icon;
+                  const selected = formPlatforms.includes(pid);
+                  return (
+                    <button
+                      key={pid}
+                      type="button"
+                      onClick={() => togglePlatform(pid)}
+                      className={cn(
+                        "flex items-center gap-2 px-3 py-2 rounded-xl border transition-all text-sm",
+                        selected
+                          ? "border-primary/40 bg-primary/10 text-foreground"
+                          : "border-border bg-muted/20 text-muted-foreground hover:bg-muted/40"
+                      )}
+                    >
+                      <Checkbox checked={selected} className="pointer-events-none" />
+                      <div className={cn("w-5 h-5 rounded flex items-center justify-center", p.color)}>
+                        <Icon className="w-3 h-3 text-white" />
+                      </div>
+                      <span>{p.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <div>
               <label className="text-sm font-medium mb-1 block">Descrição (opcional)</label>
@@ -360,9 +386,9 @@ export const StoriesLivesView = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancelar</Button>
-            <Button onClick={handleCreate} disabled={submitting || !formTitle.trim() || !formPlatform}>
+            <Button onClick={handleCreate} disabled={submitting || !formTitle.trim() || formPlatforms.length === 0}>
               {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              {createType === "story" ? "Criar Story" : "Agendar Live"}
+              {createType === "story" ? `Criar em ${formPlatforms.length} rede(s)` : `Agendar em ${formPlatforms.length} rede(s)`}
             </Button>
           </DialogFooter>
         </DialogContent>

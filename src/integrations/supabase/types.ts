@@ -89,6 +89,39 @@ export type Database = {
         }
         Relationships: []
       }
+      messaging_channels: {
+        Row: {
+          channel_id: string | null
+          channel_name: string
+          channel_type: string
+          created_at: string
+          id: string
+          members_count: number | null
+          platform: string
+          user_id: string
+        }
+        Insert: {
+          channel_id?: string | null
+          channel_name: string
+          channel_type?: string
+          created_at?: string
+          id?: string
+          members_count?: number | null
+          platform: string
+          user_id: string
+        }
+        Update: {
+          channel_id?: string | null
+          channel_name?: string
+          channel_type?: string
+          created_at?: string
+          id?: string
+          members_count?: number | null
+          platform?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           created_at: string

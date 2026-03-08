@@ -1,116 +1,86 @@
+# Plano: Fluxo de Aprovacao Editorial + Indicadores Visuais no Calendario
 
+## O que sera feito
 
-# Plano: Melhorias Abrangentes — Notificacoes, Stories Multi-Rede, Mensageria e Fluxo Editorial
+continue a geração da instrução anterior e implemente o plano a seguir
 
-## Escopo e Priorizacao
+### 1. Novo status "pending_approval" no fluxo editorial
 
-A solicitacao abrange muitas funcionalidades. Vou priorizar as que agregam mais valor e sao viaveis:
+Adicionar um novo status ao fluxo de publicacoes para suportar o ciclo jornalistico: **Rascunho -> Aguardando Aprovacao -> Aprovado/Agendado -> Publicado**.
 
-1. **Notificacoes — garantir que o historico funcione** (ja funciona no codigo, pode ser questao de dados vazios)
-2. **Stories & Lives multi-rede** — permitir selecionar varias redes ao criar story/live
-3. **Nova aba de Mensageria** — WhatsApp, Telegram, grupos Facebook, canais Instagram
-4. **Fluxo editorial no calendario** — ja implementado, verificar se admin role foi inserido
-5. **Upload funcional em todos os campos** — ja funciona, revisar edge cases
+**Migracao de banco de dados:**
 
-Itens como "transformar imagens horizontais para vertical sem cortar foco" e "abrir lives diretamente" requerem servicos externos de processamento de video/imagem que estao fora do escopo atual.
+- Nenhuma alteracao de schema necessaria: o campo `status` da tabela `scheduled_posts` ja e do tipo `text`, entao novos valores como `pending_approval` e `rejected` podem ser usados diretamente.
 
----
+**Arquivo: `src/hooks/useScheduledPosts.ts**`
 
-## Passo 1: Inserir role admin para o usuario atual
+- Expandir o tipo `status` para incluir `'pending_approval' | 'rejected'`
+- Adicionar funcoes `submitForApproval(postId)` e `approvePost(postId)` / `rejectPost(postId, reason)`
 
-O usuario `b6333d5f-fc76-4c7e-ab0b-c7b6f39b422b` precisa ter role `admin` para ver botoes Aprovar/Rejeitar. Vou usar o insert tool para garantir que o registro existe (com ON CONFLICT para evitar duplicatas).
+### 2. Atualizar statusConfig no CalendarView
 
----
+**Arquivo: `src/components/dashboard/CalendarView.tsx**`
 
-## Passo 2: Stories & Lives — suporte multi-rede
+Adicionar configs para os novos status:
 
-**Problema atual**: O formulario de criacao so permite selecionar UMA plataforma. O usuario quer publicar em varias redes simultaneamente.
+- `pending_approval`: icone `Clock` com cor laranja, label "Aguardando Aprovacao"
+- `rejected`: icone `AlertCircle` com cor vermelha escura, label "Rejeitado"
 
-**Solucao**:
-- Alterar `StoriesLivesView.tsx`: trocar `formPlatform` (string) por `formPlatforms` (string[])
-- Alterar a tabela `stories_lives`: mudar `platform` de `text` para `text[]` (array), ou criar um registro por plataforma
-- Abordagem mais simples: criar um registro separado para cada plataforma selecionada (sem alterar schema)
-- Adicionar checkboxes de plataformas no dialog de criacao em vez de Select unico
+Adicionar acoes no dropdown de cada post:
 
----
+- "Enviar para aprovacao" (quando status e `draft`)
+- "Aprovar" e "Rejeitar" (quando status e `pending_approval`)
 
-## Passo 3: Nova aba — Mensageria (WhatsApp, Telegram, Grupos)
+### 3. Indicadores visuais ricos nos quadradinhos do calendario
 
-**Nova aba no Sidebar**: "Mensagens" com icone MessageCircle
+**Arquivo: `src/components/dashboard/CalendarView.tsx**`
 
-**Funcionalidades**:
-- Lista de canais/grupos configurados (WhatsApp, Telegram, Facebook Groups, canais Instagram)
-- Formulario para adicionar novo canal/grupo (nome, plataforma, identificador)
-- Criacao de conteudo direcionado para esses canais
-- Lista de transmissao e envio individual
+Substituir os pontos coloridos simples por mini-icones de status nos quadradinhos dos dias:
 
-**Tabela nova**: `messaging_channels`
-- id, user_id, platform, channel_name, channel_id, channel_type (group/broadcast/individual/community), created_at
+- Cada post mostrara um pequeno icone (CheckCircle2, Clock, Edit, AlertCircle, etc.) colorido dentro do quadradinho do dia
+- Agrupar por status quando houver muitos posts (ex: "2x publicado, 1x rascunho")
+- Mostrar contagem total quando houver mais de 4 posts no dia
 
-**Componente novo**: `MessagingView.tsx`
-- CRUD de canais
-- Criacao e agendamento de mensagens para canais selecionados
+### 4. Painel de aprovacao no CreatePostPanel
 
----
+**Arquivo: `src/components/dashboard/CreatePostPanel.tsx**`
 
-## Passo 4: Garantir historico de notificacoes visivel
+- Adicionar botao "Enviar para Aprovacao" ao lado de "Salvar Rascunho"
+- Quando o post estiver com status `pending_approval`, mostrar botoes "Aprovar" e "Rejeitar" (simulando o papel do editor)
+- Campo de motivo de rejeicao ao rejeitar
 
-O codigo do `NotificationsFullView` e `NotificationContext` ja estao corretos — persistem no banco e carregam com realtime. O problema pode ser:
-- Nenhuma notificacao foi criada ainda (tabela vazia)
-- Vou inserir uma notificacao de boas-vindas para o usuario atual como seed
+### 5. Acoes de aprovacao no dialogo de detalhes
 
----
+**Arquivo: `src/components/dashboard/CalendarView.tsx**`
 
-## Passo 5: Sincronizar tipos de conteudo entre abas
+No dialogo de detalhes do post, adicionar botoes contextuais:
 
-No `CreatePostPanel`, os media types ja incluem story e live. Vou garantir que ao criar um story/live via CreatePost, ele tambem apareca na aba Stories & Lives (usando a mesma tabela `stories_lives`).
+- Post `draft`: "Enviar para Aprovacao"
+- Post `pending_approval`: "Aprovar" e "Rejeitar"
+- Post `rejected`: Mostrar motivo da rejeicao + "Editar e Reenviar"
 
 ---
 
 ## Detalhes Tecnicos
 
-### Migration — Tabela messaging_channels
-```sql
-CREATE TABLE public.messaging_channels (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  platform text NOT NULL,
-  channel_name text NOT NULL,
-  channel_id text,
-  channel_type text NOT NULL DEFAULT 'group',
-  members_count integer DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.messaging_channels ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users can view own channels" ON public.messaging_channels FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY "Users can insert own channels" ON public.messaging_channels FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can update own channels" ON public.messaging_channels FOR UPDATE TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY "Users can delete own channels" ON public.messaging_channels FOR DELETE TO authenticated USING (auth.uid() = user_id);
-```
-
-### Data inserts
-```sql
--- Admin role
-INSERT INTO user_roles (user_id, role) VALUES ('b6333d5f-fc76-4c7e-ab0b-c7b6f39b422b', 'admin') ON CONFLICT DO NOTHING;
-
--- Welcome notification
-INSERT INTO notifications (user_id, type, title, message) VALUES ('b6333d5f-fc76-4c7e-ab0b-c7b6f39b422b', 'info', 'Bem-vindo ao SocialHub!', 'Seu painel está pronto. Conecte suas redes sociais e comece a publicar.');
-```
-
 ### Arquivos editados:
-- `src/components/dashboard/Sidebar.tsx` — adicionar aba "Mensagens"
-- `src/components/dashboard/StoriesLivesView.tsx` — multi-plataforma no dialog de criacao
-- `src/pages/Dashboard.tsx` — registrar aba "messaging", passar dados
 
-### Arquivos novos:
-- `src/components/dashboard/MessagingView.tsx` — CRUD canais + envio de mensagens
+- `src/hooks/useScheduledPosts.ts` - Novos status e funcoes (submitForApproval, approvePost, rejectPost)
+- `src/components/dashboard/CalendarView.tsx` - Novos status no statusConfig, icones ricos nos dias, acoes de aprovacao
+- `src/components/dashboard/CreatePostPanel.tsx` - Botao "Enviar para Aprovacao"
 
-### Resumo das mudancas:
-1. Insert admin role + notificacao seed
-2. Migration para `messaging_channels`
-3. `StoriesLivesView` — checkbox multi-rede em vez de select unico
-4. Nova `MessagingView` com gestao de canais/grupos/listas de transmissao
-5. `Sidebar` + `Dashboard` — nova aba Mensagens
+### Fluxo editorial completo:
 
+1. Jornalista cria pauta (rascunho) no calendario
+2. Desenvolve conteudo no painel de criacao
+3. Clica "Enviar para Aprovacao"
+4. Editor ve posts com status "Aguardando Aprovacao" no calendario (icone laranja)
+5. Editor aprova (muda para "scheduled") ou rejeita (muda para "rejected" com motivo)
+6. Se rejeitado, jornalista edita e reenvia
+7. Se aprovado, pode publicar imediatamente ou aguardar agendamento
+
+### Indicadores visuais nos quadradinhos:
+
+- Cada dia mostrara ate 4 mini-icones coloridos representando os posts daquele dia
+- Se houver mais de 4 posts, mostra 3 icones + badge "+N"
+- Icones usados: CheckCircle2 (publicado/verde), Clock (agendado/azul), Edit (rascunho/amarelo), AlertCircle (falha/vermelho), Loader2 (aguardando aprovacao/laranja), X (rejeitado/vermelho escuro)

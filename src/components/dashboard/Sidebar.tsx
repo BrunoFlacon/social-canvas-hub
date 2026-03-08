@@ -10,7 +10,8 @@ import {
   FileText,
   Bell,
   LogOut,
-  ChevronLeft
+  ChevronLeft,
+  MessageCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -27,6 +28,7 @@ const menuItems = [
   { id: "calendar", icon: Calendar, label: "Calendário" },
   { id: "analytics", icon: BarChart3, label: "Analytics" },
   { id: "stories", icon: Radio, label: "Stories & Lives" },
+  { id: "messaging", icon: MessageCircle, label: "Mensagens" },
   { id: "documents", icon: FileText, label: "Documentos" },
   { id: "networks", icon: Share2, label: "Redes Sociais" },
 ];
