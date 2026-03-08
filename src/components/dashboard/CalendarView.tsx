@@ -17,7 +17,10 @@ import {
   Send,
   XCircle,
   ShieldCheck,
-  ShieldX
+  ShieldX,
+  MessageCircle,
+  Radio,
+  Video
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { socialPlatforms } from "@/components/icons/SocialIcons";
@@ -25,6 +28,8 @@ import { ScheduledPost } from "@/hooks/useScheduledPosts";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { usePublisher } from "@/hooks/usePublisher";
 import { useUserRole } from "@/hooks/useUserRole";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 import {
   DropdownMenu,
