@@ -23,7 +23,6 @@ export function useSocialConnections() {
     if (!user) return;
 
     try {
-      // Use safe columns only (no tokens)
       const { data, error } = await supabase
         .from('social_connections')
         .select('id, platform, is_connected, page_name, platform_user_id, token_expires_at, page_id')
@@ -73,11 +72,66 @@ export function useSocialConnections() {
       const data = await response.json();
 
       if (!response.ok) {
+        // Handle platforms that don't support OAuth
+        if (data.requiresToken || data.requiresSetup) {
+          toast({
+            title: "Configuração necessária",
+            description: data.error,
+          });
+          return;
+        }
         throw new Error(data.error || "Erro ao iniciar OAuth");
       }
 
-      // Redirect to auth URL
-      window.location.href = data.authUrl;
+      // Open OAuth in popup window instead of redirect (works inside iframe)
+      const width = 600;
+      const height = 700;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+
+      const popup = window.open(
+        data.authUrl,
+        `oauth_${platform}`,
+        `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes,resizable=yes`
+      );
+
+      if (!popup) {
+        // Popup blocked — fallback to redirect
+        toast({
+          title: "Popup bloqueado",
+          description: "Permita popups para este site ou tente novamente.",
+          variant: "destructive",
+        });
+        // Fallback: redirect directly
+        window.location.href = data.authUrl;
+        return;
+      }
+
+      // Poll for popup close / completion
+      const pollInterval = setInterval(async () => {
+        try {
+          if (popup.closed) {
+            clearInterval(pollInterval);
+            // Refresh connections after popup closes
+            await fetchConnections();
+            toast({
+              title: "Conexão atualizada",
+              description: `Verifique o status da conexão com ${platform}.`,
+            });
+          }
+        } catch {
+          // Cross-origin — popup is on external domain, just wait
+        }
+      }, 1000);
+
+      // Safety timeout
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        if (!popup.closed) {
+          // Don't force close — user might still be authenticating
+        }
+      }, 300000); // 5 min timeout
+
     } catch (error) {
       console.error("OAuth init error:", error);
       toast({

@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import {
-  MessageCircle, Plus, Trash2, Send, Users, Radio as BroadcastIcon, Hash, User, Loader2, Clock, CheckCircle2, AlertCircle, Phone, Search, Filter, Calendar
+  MessageCircle, Plus, Trash2, Send, Users, Radio as BroadcastIcon, Hash, User, Loader2, Clock, CheckCircle2, AlertCircle, Phone, Search, Filter, Calendar, Paperclip, Image, Video, Mic, FileText, X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { socialPlatforms } from "@/components/icons/SocialIcons";
@@ -46,7 +46,6 @@ interface Message {
   created_at: string;
 }
 
-// Platform configs with allowed channel types
 const messagingPlatformConfigs = [
   { id: "whatsapp", name: "WhatsApp", types: ["group", "broadcast", "community", "individual"] },
   { id: "telegram", name: "Telegram", types: ["group", "channel", "community", "individual"] },
@@ -101,6 +100,12 @@ export const MessagingView = () => {
   const [composeIndividualPlatform, setComposeIndividualPlatform] = useState("whatsapp");
   const [composeSending, setComposeSending] = useState(false);
   const [sendMode, setSendMode] = useState<"channels" | "individual">("channels");
+
+  // Attachments
+  const [attachments, setAttachments] = useState<{ url: string; type: string; name: string }[]>([]);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [fileAccept, setFileAccept] = useState("*/*");
 
   // History filters
   const [historyFilter, setHistoryFilter] = useState("all");
@@ -185,24 +190,57 @@ export const MessagingView = () => {
     setComposeTarget(prev => prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]);
   };
 
+  // File upload handler
+  const handleAttachmentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    setUploadingAttachment(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `messages/${user.id}/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("media").upload(path, file);
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
+      const fileType = file.type.startsWith("image") ? "image" : file.type.startsWith("video") ? "video" : file.type.startsWith("audio") ? "audio" : "file";
+      setAttachments(prev => [...prev, { url: urlData.publicUrl, type: fileType, name: file.name }]);
+    } catch (err: any) {
+      toast({ title: "Erro no upload", description: err.message, variant: "destructive" });
+    } finally {
+      setUploadingAttachment(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const openFileDialog = (accept: string) => {
+    setFileAccept(accept);
+    setTimeout(() => fileInputRef.current?.click(), 50);
+  };
+
+  const removeAttachment = (idx: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== idx));
+  };
+
   const handleSendMessage = async () => {
     if (!user) return;
     setComposeSending(true);
 
     try {
+      const mediaUrl = attachments.length > 0 ? attachments.map(a => a.url).join(",") : null;
+
       if (sendMode === "individual") {
         if (!composeIndividualPhone.trim() || !composeMessage.trim()) return;
         const { error } = await supabase.from("messages").insert({
           user_id: user.id,
           content: composeMessage.trim(),
-          status: composeScheduledAt ? "scheduled" : "draft",
+          media_url: mediaUrl,
+          status: composeScheduledAt ? "scheduled" : "sent",
           scheduled_at: composeScheduledAt || null,
           recipient_phone: composeIndividualPhone.trim(),
           recipient_name: composeIndividualName.trim() || null,
           platform: composeIndividualPlatform,
         } as any);
         if (error) throw error;
-        toast({ title: composeScheduledAt ? "Mensagem agendada!" : "Rascunho salvo!", description: `Para: ${composeIndividualPhone}` });
+        toast({ title: composeScheduledAt ? "Mensagem agendada!" : "Mensagem enviada!", description: `Para: ${composeIndividualPhone}` });
       } else {
         if (composeTarget.length === 0 || !composeMessage.trim()) return;
         const inserts = composeTarget.map(channelId => {
@@ -211,7 +249,8 @@ export const MessagingView = () => {
             user_id: user.id,
             channel_id: channelId,
             content: composeMessage.trim(),
-            status: composeScheduledAt ? "scheduled" : "draft",
+            media_url: mediaUrl,
+            status: composeScheduledAt ? "scheduled" : "sent",
             scheduled_at: composeScheduledAt || null,
             platform: ch?.platform || null,
           };
@@ -219,7 +258,7 @@ export const MessagingView = () => {
         const { error } = await supabase.from("messages").insert(inserts as any);
         if (error) throw error;
         const targetNames = channels.filter(c => composeTarget.includes(c.id)).map(c => c.channel_name).join(", ");
-        toast({ title: composeScheduledAt ? "Mensagens agendadas!" : "Rascunhos salvos!", description: `Para: ${targetNames}` });
+        toast({ title: composeScheduledAt ? "Mensagens agendadas!" : "Mensagens enviadas!", description: `Para: ${targetNames}` });
       }
       resetCompose();
     } catch (error: any) {
@@ -229,8 +268,43 @@ export const MessagingView = () => {
     }
   };
 
+  const handleSaveDraft = async () => {
+    if (!user || !composeMessage.trim()) return;
+    setComposeSending(true);
+    try {
+      const mediaUrl = attachments.length > 0 ? attachments.map(a => a.url).join(",") : null;
+      if (sendMode === "individual") {
+        const { error } = await supabase.from("messages").insert({
+          user_id: user.id, content: composeMessage.trim(), media_url: mediaUrl,
+          status: "draft", recipient_phone: composeIndividualPhone.trim() || null,
+          recipient_name: composeIndividualName.trim() || null, platform: composeIndividualPlatform,
+        } as any);
+        if (error) throw error;
+      } else {
+        if (composeTarget.length === 0) {
+          const { error } = await supabase.from("messages").insert({
+            user_id: user.id, content: composeMessage.trim(), media_url: mediaUrl, status: "draft", platform: null,
+          } as any);
+          if (error) throw error;
+        } else {
+          const inserts = composeTarget.map(channelId => ({
+            user_id: user.id, channel_id: channelId, content: composeMessage.trim(), media_url: mediaUrl, status: "draft", platform: channels.find(c => c.id === channelId)?.platform || null,
+          }));
+          const { error } = await supabase.from("messages").insert(inserts as any);
+          if (error) throw error;
+        }
+      }
+      toast({ title: "Rascunho salvo!" });
+      resetCompose();
+    } catch (error: any) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    } finally {
+      setComposeSending(false);
+    }
+  };
+
   const resetCompose = () => {
-    setComposeTarget([]); setComposeMessage(""); setComposeScheduledAt(""); setComposeIndividualPhone(""); setComposeIndividualName(""); setSendMode("channels");
+    setComposeTarget([]); setComposeMessage(""); setComposeScheduledAt(""); setComposeIndividualPhone(""); setComposeIndividualName(""); setSendMode("channels"); setAttachments([]);
   };
 
   const handleDeleteMessage = async (id: string) => {
@@ -259,13 +333,14 @@ export const MessagingView = () => {
       channels: channels.filter(c => c.platform === mp.id),
     }));
 
-  // Custom platforms
   const knownIds = messagingPlatformConfigs.map(p => p.id);
   const customChannels = channels.filter(c => !knownIds.includes(c.platform));
   const customPlatforms = [...new Set(customChannels.map(c => c.platform))];
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+      <input ref={fileInputRef} type="file" accept={fileAccept} onChange={handleAttachmentUpload} className="hidden" />
+
       <div className="mb-8">
         <h1 className="font-display font-bold text-3xl mb-2">Mensagens & Canais</h1>
         <p className="text-muted-foreground">Gerencie canais, compose e veja o histórico de mensagens</p>
@@ -349,15 +424,12 @@ export const MessagingView = () => {
                   </div>
                 );
               })}
-              {/* Custom platforms */}
               {customPlatforms.map(cpName => {
                 const cChannels = customChannels.filter(c => c.platform === cpName);
                 return (
                   <div key={cpName}>
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
-                        <Hash className="w-4 h-4 text-muted-foreground" />
-                      </div>
+                      <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center"><Hash className="w-4 h-4 text-muted-foreground" /></div>
                       <h2 className="font-display font-bold text-lg capitalize">{cpName}</h2>
                       <span className="text-sm text-muted-foreground">({cChannels.length})</span>
                     </div>
@@ -455,21 +527,73 @@ export const MessagingView = () => {
             )}
 
             <div className="mt-4 space-y-4">
+              {/* Message input with attachment bar */}
               <div>
                 <label className="text-sm font-medium mb-1 block">Mensagem</label>
                 <Textarea value={composeMessage} onChange={e => setComposeMessage(e.target.value)} placeholder="Digite sua mensagem..." rows={4} />
               </div>
-              <div>
-                <label className="text-sm font-medium mb-1 block">Agendar para (opcional)</label>
-                <Input type="datetime-local" value={composeScheduledAt} onChange={e => setComposeScheduledAt(e.target.value)} />
+
+              {/* Attachments preview */}
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {attachments.map((att, i) => (
+                    <div key={i} className="relative group rounded-lg border border-border p-2 flex items-center gap-2 bg-muted/30">
+                      {att.type === "image" ? (
+                        <img src={att.url} alt={att.name} className="w-12 h-12 rounded object-cover" />
+                      ) : att.type === "video" ? (
+                        <Video className="w-6 h-6 text-blue-500" />
+                      ) : att.type === "audio" ? (
+                        <Mic className="w-6 h-6 text-purple-500" />
+                      ) : (
+                        <FileText className="w-6 h-6 text-muted-foreground" />
+                      )}
+                      <span className="text-xs truncate max-w-[100px]">{att.name}</span>
+                      <button onClick={() => removeAttachment(i)} className="p-0.5 rounded-full bg-destructive/80 text-white absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Attachment buttons bar */}
+              <div className="flex items-center gap-1 border border-border rounded-xl p-1.5 bg-muted/20">
+                <button type="button" onClick={() => openFileDialog("image/*")} disabled={uploadingAttachment}
+                  className="p-2 rounded-lg hover:bg-muted transition-colors" title="Anexar imagem">
+                  <Image className="w-4 h-4 text-green-500" />
+                </button>
+                <button type="button" onClick={() => openFileDialog("video/*")} disabled={uploadingAttachment}
+                  className="p-2 rounded-lg hover:bg-muted transition-colors" title="Anexar vídeo">
+                  <Video className="w-4 h-4 text-blue-500" />
+                </button>
+                <button type="button" onClick={() => openFileDialog("audio/*")} disabled={uploadingAttachment}
+                  className="p-2 rounded-lg hover:bg-muted transition-colors" title="Anexar áudio">
+                  <Mic className="w-4 h-4 text-purple-500" />
+                </button>
+                <button type="button" onClick={() => openFileDialog("*/*")} disabled={uploadingAttachment}
+                  className="p-2 rounded-lg hover:bg-muted transition-colors" title="Anexar arquivo">
+                  <Paperclip className="w-4 h-4 text-muted-foreground" />
+                </button>
+                {uploadingAttachment && <Loader2 className="w-4 h-4 animate-spin text-primary ml-2" />}
+
+                <div className="flex-1" />
+
+                {/* Schedule */}
+                <Input type="datetime-local" value={composeScheduledAt} onChange={e => setComposeScheduledAt(e.target.value)}
+                  className="w-auto h-8 text-xs bg-transparent border-0 focus-visible:ring-0" />
               </div>
+
+              {/* Action buttons */}
               <div className="flex gap-2">
-                <Button onClick={handleSendMessage} disabled={composeSending || !composeMessage.trim() || (sendMode === "channels" && composeTarget.length === 0) || (sendMode === "individual" && !composeIndividualPhone.trim())}
-                  className="gap-2">
-                  {composeSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  {composeScheduledAt ? "Agendar" : "Salvar rascunho"}
+                <Button variant="outline" onClick={handleSaveDraft} disabled={composeSending || !composeMessage.trim()} className="gap-2">
+                  <FileText className="w-4 h-4" /> Salvar rascunho
                 </Button>
-                <Button variant="outline" onClick={resetCompose}>Limpar</Button>
+                <Button onClick={handleSendMessage}
+                  disabled={composeSending || !composeMessage.trim() || (sendMode === "channels" && composeTarget.length === 0) || (sendMode === "individual" && !composeIndividualPhone.trim())}
+                  className="gap-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:opacity-90 text-white flex-1">
+                  {composeSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {composeScheduledAt ? "Agendar envio" : "Enviar agora"}
+                </Button>
               </div>
             </div>
           </div>
@@ -478,7 +602,6 @@ export const MessagingView = () => {
         {/* ===== HISTORY TAB ===== */}
         <TabsContent value="history">
           <div className="space-y-4">
-            {/* Filters */}
             <div className="flex flex-wrap gap-3 items-center">
               <div className="relative flex-1 max-w-xs">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -514,7 +637,6 @@ export const MessagingView = () => {
                     <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}
                       className="glass-card rounded-2xl border border-border p-4 hover:border-primary/20 transition-all group">
                       <div className="flex items-start gap-3">
-                        {/* Avatar / Platform */}
                         <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0", platform?.color || "bg-muted")}>
                           {PIcon ? <PIcon className="w-5 h-5 text-white" /> : <MessageCircle className="w-5 h-5 text-muted-foreground" />}
                         </div>
@@ -528,9 +650,17 @@ export const MessagingView = () => {
                               <StatusIcon className="w-3 h-3" /> {statusCfg.label}
                             </Badge>
                           </div>
-                          {/* Chat bubble */}
                           <div className="bg-primary/5 rounded-2xl rounded-tl-sm px-4 py-3 max-w-lg">
                             <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                            {msg.media_url && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {msg.media_url.split(",").map((url, i) => (
+                                  <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline flex items-center gap-1">
+                                    <Paperclip className="w-3 h-3" /> Anexo {i + 1}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                             <span>{new Date(msg.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span>
@@ -538,7 +668,6 @@ export const MessagingView = () => {
                           </div>
                         </div>
 
-                        {/* Actions */}
                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                           {(msg.status === "draft" || msg.status === "scheduled") && (
                             <button onClick={() => handleMarkSent(msg.id)} className="p-1.5 rounded-lg hover:bg-green-500/10 hover:text-green-500 transition-all" title="Marcar como enviada">

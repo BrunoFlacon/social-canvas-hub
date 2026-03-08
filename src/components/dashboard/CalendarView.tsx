@@ -17,7 +17,10 @@ import {
   Send,
   XCircle,
   ShieldCheck,
-  ShieldX
+  ShieldX,
+  MessageCircle,
+  Radio,
+  Video
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { socialPlatforms } from "@/components/icons/SocialIcons";
@@ -25,6 +28,8 @@ import { ScheduledPost } from "@/hooks/useScheduledPosts";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { usePublisher } from "@/hooks/usePublisher";
 import { useUserRole } from "@/hooks/useUserRole";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 import {
   DropdownMenu,
@@ -119,16 +124,32 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
   const [rejectingPostId, setRejectingPostId] = useState<string | null>(null);
   const [activeFilters, setActiveFilters] = useState<Set<StatusKey>>(new Set(["published", "scheduled", "draft", "failed", "pending_approval", "rejected"]));
 
+  // Extra calendar items: messages + stories/lives
+  const { user } = useAuth();
+  const [calendarMessages, setCalendarMessages] = useState<any[]>([]);
+  const [calendarStories, setCalendarStories] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchExtra = async () => {
+      const [msgRes, storyRes] = await Promise.all([
+        supabase.from("messages").select("*").eq("user_id", user.id).not("scheduled_at", "is", null),
+        supabase.from("stories_lives").select("*").eq("user_id", user.id),
+      ]);
+      if (msgRes.data) setCalendarMessages(msgRes.data);
+      if (storyRes.data) setCalendarStories(storyRes.data);
+    };
+    fetchExtra();
+  }, [user, posts]);
+
   const { addNotification } = useNotifications();
   const { publishNow, publishing } = usePublisher();
   const { isEditor } = useUserRole();
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
-  
   const firstDayOfMonth = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  
 
   // Notify about failed posts
   const notifiedFailuresRef = useRef(new Set<string>());
@@ -200,6 +221,29 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
     });
     return grouped;
   }, [filteredPosts, month, year]);
+
+  // Extra items (messages and stories) grouped by day for calendar indicators
+  const extraItemsByDay = useMemo(() => {
+    const grouped: Record<number, { type: string; title: string; status: string; platform?: string; scheduled_at?: string }[]> = {};
+    calendarMessages.forEach(msg => {
+      if (!msg.scheduled_at) return;
+      const d = new Date(msg.scheduled_at);
+      if (d.getMonth() === month && d.getFullYear() === year) {
+        const day = d.getDate();
+        if (!grouped[day]) grouped[day] = [];
+        grouped[day].push({ type: "message", title: msg.content?.substring(0, 40) || "Mensagem", status: msg.status, platform: msg.platform, scheduled_at: msg.scheduled_at });
+      }
+    });
+    calendarStories.forEach(item => {
+      const d = item.scheduled_at ? new Date(item.scheduled_at) : new Date(item.created_at);
+      if (d.getMonth() === month && d.getFullYear() === year) {
+        const day = d.getDate();
+        if (!grouped[day]) grouped[day] = [];
+        grouped[day].push({ type: item.type, title: item.title, status: item.status, platform: item.platform, scheduled_at: item.scheduled_at });
+      }
+    });
+    return grouped;
+  }, [calendarMessages, calendarStories, month, year]);
 
   const goToPrevMonth = () => { setCurrentDate(new Date(year, month - 1, 1)); setSelectedDay(null); };
   const goToNextMonth = () => { setCurrentDate(new Date(year, month + 1, 1)); setSelectedDay(null); };
@@ -274,12 +318,13 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
   };
 
   // Render rich status icons for day cells
-  const renderDayIndicators = (dayPosts: ScheduledPost[]) => {
-    if (dayPosts.length === 0) return null;
+  const renderDayIndicators = (dayPosts: ScheduledPost[], dayExtraItems?: typeof extraItemsByDay[number]) => {
+    const totalExtra = dayExtraItems?.length || 0;
+    if (dayPosts.length === 0 && totalExtra === 0) return null;
 
     const maxIcons = 4;
     const showPosts = dayPosts.slice(0, dayPosts.length > maxIcons ? maxIcons - 1 : maxIcons);
-    const remaining = dayPosts.length - showPosts.length;
+    const remaining = dayPosts.length - showPosts.length + totalExtra;
 
     return (
       <div className="absolute bottom-1 left-1 right-1 flex items-center justify-center gap-0.5 flex-wrap">
@@ -288,13 +333,20 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
           if (!config) return null;
           const Icon = config.icon;
           return (
-            <Icon
-              key={i}
-              className={cn("w-3 h-3", config.color)}
-            />
+            <Icon key={i} className={cn("w-3 h-3", config.color)} />
           );
         })}
-        {remaining > 0 && (
+        {totalExtra > 0 && showPosts.length < maxIcons && (
+          <>
+            {dayExtraItems!.slice(0, maxIcons - showPosts.length).map((item, i) => {
+              if (item.type === "message") return <MessageCircle key={`m${i}`} className="w-3 h-3 text-primary" />;
+              if (item.type === "story") return <Radio key={`s${i}`} className="w-3 h-3 text-pink-500" />;
+              if (item.type === "live") return <Video key={`l${i}`} className="w-3 h-3 text-red-500" />;
+              return null;
+            })}
+          </>
+        )}
+        {remaining > (totalExtra > 0 && showPosts.length < maxIcons ? Math.min(totalExtra, maxIcons - showPosts.length) : 0) && (
           <span className="text-[8px] font-bold text-muted-foreground">+{remaining}</span>
         )}
       </div>
@@ -385,6 +437,7 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
             <div className="grid grid-cols-7 gap-2">
               {days.map((day, index) => {
                 const dayPosts = day ? postsByDay[day] : undefined;
+                const dayExtra = day ? extraItemsByDay[day] : undefined;
                 const isSelected = day === selectedDay;
                 const isToday = day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear();
 
@@ -403,7 +456,7 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
                     {day && (
                       <>
                         <span className={cn("text-sm font-medium", isToday && "text-accent", isSelected && "text-primary")}>{day}</span>
-                        {dayPosts && renderDayIndicators(dayPosts)}
+                        {(dayPosts || dayExtra) && renderDayIndicators(dayPosts || [], dayExtra)}
                       </>
                     )}
                   </motion.div>
@@ -428,119 +481,145 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
           </div>
 
           {selectedDay ? (
-            selectedDayPosts.length > 0 ? (
-              <div className="space-y-3 max-h-[500px] overflow-y-auto">
-                {selectedDayPosts.map((post, index) => {
-                  const config = statusConfig[post.status as StatusKey];
-                  const StatusIcon = config?.icon || Clock;
-                  return (
-                    <motion.div
-                      key={post.id}
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                      className="p-4 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors group"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="flex -space-x-1.5 shrink-0">
-                          {post.platforms.slice(0, 3).map((platformId) => {
-                            const platform = socialPlatforms.find(p => p.id === platformId);
-                            if (!platform) return null;
-                            const Icon = platform.icon;
-                            return (
-                              <div key={platformId} className={cn("w-7 h-7 rounded-md flex items-center justify-center border-2 border-card", platform.color)}>
-                                <Icon className="w-3.5 h-3.5 text-white" />
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm line-clamp-2 mb-2">{post.content}</p>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium", config?.bg, config?.color)}>
-                              <StatusIcon className="w-3 h-3" />
-                              {config?.label}
-                            </span>
-                            <span className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {formatPostTime(post)}
-                            </span>
+            <>
+              {selectedDayPosts.length > 0 && (
+                <div className="space-y-3 max-h-[350px] overflow-y-auto">
+                  {selectedDayPosts.map((post, index) => {
+                    const config = statusConfig[post.status as StatusKey];
+                    const StatusIcon = config?.icon || Clock;
+                    return (
+                      <motion.div
+                        key={post.id}
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="p-4 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors group"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex -space-x-1.5 shrink-0">
+                            {post.platforms.slice(0, 3).map((platformId) => {
+                              const platform = socialPlatforms.find(p => p.id === platformId);
+                              if (!platform) return null;
+                              const Icon = platform.icon;
+                              return (
+                                <div key={platformId} className={cn("w-7 h-7 rounded-md flex items-center justify-center border-2 border-card", platform.color)}>
+                                  <Icon className="w-3.5 h-3.5 text-white" />
+                                </div>
+                              );
+                            })}
                           </div>
-                          {post.status === 'failed' && post.error_message && (
-                            <div className="mt-2 p-2 bg-red-500/10 rounded-lg">
-                              <p className="text-xs text-red-500">{post.error_message}</p>
-                              <p className="text-xs text-muted-foreground mt-1">{getSuggestion(post.error_message)}</p>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm line-clamp-2 mb-2">{post.content}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium", config?.bg, config?.color)}>
+                                <StatusIcon className="w-3 h-3" />
+                                {config?.label}
+                              </span>
+                              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {formatPostTime(post)}
+                              </span>
                             </div>
-                          )}
-                          {post.status === 'rejected' && post.error_message && (
-                            <div className="mt-2 p-2 bg-red-700/10 rounded-lg">
-                              <p className="text-xs font-medium text-red-700">Motivo da rejeição:</p>
-                              <p className="text-xs text-red-700">{post.error_message}</p>
-                            </div>
-                          )}
+                            {post.status === 'failed' && post.error_message && (
+                              <div className="mt-2 p-2 bg-red-500/10 rounded-lg">
+                                <p className="text-xs text-red-500">{post.error_message}</p>
+                              </div>
+                            )}
+                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-muted transition-all">
+                                <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => viewPostDetails(post)}>
+                                <Eye className="w-4 h-4 mr-2" /> Ver detalhes
+                              </DropdownMenuItem>
+                              {onEditPost && (
+                                <DropdownMenuItem onClick={() => onEditPost(post)}>
+                                  <Edit className="w-4 h-4 mr-2" /> Editar conteúdo
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuSeparator />
+                              {post.status === 'draft' && (
+                                <DropdownMenuItem onClick={() => handleSubmitForApproval(post.id)}>
+                                  <Send className="w-4 h-4 mr-2" /> Enviar para aprovação
+                                </DropdownMenuItem>
+                              )}
+                              {post.status === 'pending_approval' && isEditor && (
+                                <>
+                                  <DropdownMenuItem onClick={() => handleApprovePost(post.id)}>
+                                    <ShieldCheck className="w-4 h-4 mr-2 text-green-500" /> Aprovar
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleOpenRejectDialog(post.id)}>
+                                    <ShieldX className="w-4 h-4 mr-2 text-red-500" /> Rejeitar
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {(post.status === 'draft' || post.status === 'scheduled') && (
+                                <DropdownMenuItem onClick={() => handlePublishNow(post)} disabled={publishing}>
+                                  <Send className="w-4 h-4 mr-2" /> Publicar agora
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => handleDeletePost(post.id)} className="text-destructive focus:text-destructive">
+                                <Trash2 className="w-4 h-4 mr-2" /> Excluir
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-muted transition-all">
-                              <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => viewPostDetails(post)}>
-                              <Eye className="w-4 h-4 mr-2" /> Ver detalhes
-                            </DropdownMenuItem>
-                            {onEditPost && (
-                              <DropdownMenuItem onClick={() => onEditPost(post)}>
-                                <Edit className="w-4 h-4 mr-2" /> Editar conteúdo
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            {/* Approval workflow actions */}
-                            {post.status === 'draft' && (
-                              <DropdownMenuItem onClick={() => handleSubmitForApproval(post.id)}>
-                                <Send className="w-4 h-4 mr-2" /> Enviar para aprovação
-                              </DropdownMenuItem>
-                            )}
-                            {post.status === 'pending_approval' && isEditor && (
-                              <>
-                                <DropdownMenuItem onClick={() => handleApprovePost(post.id)}>
-                                  <ShieldCheck className="w-4 h-4 mr-2 text-green-500" /> Aprovar
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleOpenRejectDialog(post.id)}>
-                                  <ShieldX className="w-4 h-4 mr-2 text-red-500" /> Rejeitar
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            {post.status === 'rejected' && onEditPost && (
-                              <DropdownMenuItem onClick={() => onEditPost(post)}>
-                                <Edit className="w-4 h-4 mr-2" /> Editar e reenviar
-                              </DropdownMenuItem>
-                            )}
-                            {(post.status === 'draft' || post.status === 'scheduled') && (
-                              <DropdownMenuItem onClick={() => handlePublishNow(post)} disabled={publishing}>
-                                <Send className="w-4 h-4 mr-2" /> Publicar agora
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => handleDeletePost(post.id)} className="text-destructive focus:text-destructive">
-                              <Trash2 className="w-4 h-4 mr-2" /> Excluir
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 rounded-2xl bg-muted mx-auto mb-4 flex items-center justify-center">
-                  <Clock className="w-8 h-8 text-muted-foreground" />
+                      </motion.div>
+                    );
+                  })}
                 </div>
-                <p className="text-muted-foreground mb-4">Nenhuma publicação neste dia</p>
-                <button onClick={handleAddPost} className="text-primary text-sm hover:underline">+ Agendar publicação</button>
-              </div>
-            )
+              )}
+
+              {/* Extra items: messages and stories/lives */}
+              {extraItemsByDay[selectedDay] && extraItemsByDay[selectedDay].length > 0 && (
+                <div className={cn("space-y-2", selectedDayPosts.length > 0 && "mt-4 pt-4 border-t border-border")}>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Mensagens & Stories</p>
+                  {extraItemsByDay[selectedDay].map((item, i) => {
+                    const platform = socialPlatforms.find(p => p.id === item.platform);
+                    const PIcon = platform?.icon;
+                    return (
+                      <div key={i} className="p-3 rounded-lg bg-muted/20 flex items-center gap-3">
+                        <div className={cn("w-7 h-7 rounded-md flex items-center justify-center", 
+                          item.type === "message" ? "bg-primary/20" : item.type === "story" ? "bg-pink-500/20" : "bg-red-500/20")}>
+                          {item.type === "message" ? <MessageCircle className="w-3.5 h-3.5 text-primary" /> 
+                           : item.type === "story" ? <Radio className="w-3.5 h-3.5 text-pink-500" /> 
+                           : <Video className="w-3.5 h-3.5 text-red-500" />}
+                        </div>
+                        {PIcon && (
+                          <div className={cn("w-5 h-5 rounded flex items-center justify-center", platform?.color)}>
+                            <PIcon className="w-3 h-3 text-white" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs line-clamp-1">{item.title}</p>
+                          <p className="text-[10px] text-muted-foreground capitalize">{item.type === "message" ? "Mensagem" : item.type === "story" ? "Story" : "Live"} • {item.status}</p>
+                        </div>
+                        {item.scheduled_at && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date(item.scheduled_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {selectedDayPosts.length === 0 && (!extraItemsByDay[selectedDay] || extraItemsByDay[selectedDay].length === 0) && (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 rounded-2xl bg-muted mx-auto mb-4 flex items-center justify-center">
+                    <Clock className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                  <p className="text-muted-foreground mb-4">Nenhuma publicação neste dia</p>
+                  <button onClick={handleAddPost} className="text-primary text-sm hover:underline">+ Agendar publicação</button>
+                </div>
+              )}
+            </>
           ) : (
             <div className="text-center py-12">
               <p className="text-muted-foreground">Clique em um dia para ver os detalhes</p>
