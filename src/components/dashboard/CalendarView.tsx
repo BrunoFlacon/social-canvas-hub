@@ -124,15 +124,23 @@ export const CalendarView = ({ posts, loading, deletePost, submitForApproval, ap
   const [rejectingPostId, setRejectingPostId] = useState<string | null>(null);
   const [activeFilters, setActiveFilters] = useState<Set<StatusKey>>(new Set(["published", "scheduled", "draft", "failed", "pending_approval", "rejected"]));
 
-  const { addNotification } = useNotifications();
-  const { publishNow, publishing } = usePublisher();
-  const { isEditor } = useUserRole();
+  // Extra calendar items: messages + stories/lives
+  const { user } = useAuth();
+  const [calendarMessages, setCalendarMessages] = useState<any[]>([]);
+  const [calendarStories, setCalendarStories] = useState<any[]>([]);
 
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
-  
-  const firstDayOfMonth = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  useEffect(() => {
+    if (!user) return;
+    const fetchExtra = async () => {
+      const [msgRes, storyRes] = await Promise.all([
+        supabase.from("messages").select("*").eq("user_id", user.id).not("scheduled_at", "is", null),
+        supabase.from("stories_lives").select("*").eq("user_id", user.id),
+      ]);
+      if (msgRes.data) setCalendarMessages(msgRes.data);
+      if (storyRes.data) setCalendarStories(storyRes.data);
+    };
+    fetchExtra();
+  }, [user, posts]); // re-fetch when posts change
   
 
   // Notify about failed posts
