@@ -166,6 +166,7 @@ export const MessagingView = () => {
     ? messagingPlatformConfigs.find(p => p.id === formPlatform)?.types || []
     : [];
 
+  // Add or update channel
   const handleAddChannel = async () => {
     if (!user || !formPlatform || !formChannelName.trim()) return;
     setSubmitting(true);
