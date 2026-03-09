@@ -493,10 +493,16 @@ export const MessagingView = () => {
                                   <p className="text-xs text-muted-foreground">{getTypeLabel(ch.channel_type)}</p>
                                 </div>
                               </div>
-                              <button onClick={() => handleDelete(ch.id)}
-                                className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <div className="flex gap-1">
+                                <button onClick={() => handleEditChannel(ch)}
+                                  className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-accent transition-all">
+                                  <Edit className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => handleDelete(ch.id)}
+                                  className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                             <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
                               {ch.members_count > 0 && <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {ch.members_count} membros</span>}
@@ -797,11 +803,11 @@ export const MessagingView = () => {
         </TabsContent>
       </Tabs>
 
-      {/* Add Channel Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      {/* Add/Edit Channel Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={(open) => { if (!open) { setShowAddDialog(false); resetAddForm(); } else { setShowAddDialog(true); } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Adicionar Canal</DialogTitle>
+            <DialogTitle>{editingChannel ? "Editar Canal" : "Adicionar Canal"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -851,9 +857,9 @@ export const MessagingView = () => {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddDialog(false)}>Cancelar</Button>
-            <Button onClick={handleAddChannel} disabled={submitting || !formPlatform || !formChannelName.trim()}>
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Adicionar"}
+            <Button variant="outline" onClick={() => { setShowAddDialog(false); resetAddForm(); }}>Cancelar</Button>
+            <Button onClick={handleSaveChannel} disabled={submitting || !formPlatform || !formChannelName.trim()}>
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : editingChannel ? "Salvar" : "Adicionar"}
             </Button>
           </DialogFooter>
         </DialogContent>
