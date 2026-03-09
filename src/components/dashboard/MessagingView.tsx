@@ -538,9 +538,15 @@ export const MessagingView = () => {
                                   <p className="text-xs text-muted-foreground">{getTypeLabel(ch.channel_type)}</p>
                                 </div>
                               </div>
-                              <button onClick={() => handleDelete(ch.id)} className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <div className="flex gap-1">
+                                <button onClick={() => handleEditChannel(ch)}
+                                  className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-accent transition-all">
+                                  <Edit className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => handleDelete(ch.id)} className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                           </motion.div>
                         );
