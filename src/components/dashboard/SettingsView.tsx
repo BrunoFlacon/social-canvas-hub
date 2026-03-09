@@ -288,6 +288,12 @@ export const SettingsView = () => {
                         )}>
                           {config.icon}
                         </div>
+                        {conn && (conn as any).profile_image_url ? (
+                          <Avatar className="w-10 h-10 rounded-lg -ml-14 mr-0">
+                            <AvatarImage src={(conn as any).profile_image_url} alt={conn.page_name || config.name} className="rounded-lg object-cover" />
+                            <AvatarFallback className="rounded-lg bg-muted text-xs">{config.icon}</AvatarFallback>
+                          </Avatar>
+                        ) : null}
                         <div className="text-left">
                           <div className="flex items-center gap-2">
                             <p className="font-medium">{config.name}</p>
@@ -299,7 +305,7 @@ export const SettingsView = () => {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            {conn ? `Conectado${conn.page_name ? ` • ${conn.page_name}` : ''}` : 
+                            {conn ? `Conectado${conn.page_name ? ` • ${conn.page_name}` : ''}${conn.token_expires_at ? ` • Token expira em ${new Date(conn.token_expires_at).toLocaleDateString('pt-BR')}` : ''}` : 
                              hasCreds ? "Credenciais configuradas — pronto para conectar" : 
                              "Clique para configurar credenciais"}
                           </p>
