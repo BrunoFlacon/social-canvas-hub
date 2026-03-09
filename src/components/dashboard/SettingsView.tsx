@@ -1,7 +1,8 @@
 import { useState, useRef } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { 
-  User, Bell, Key, Shield, Globe, Save, Camera, Check, AlertCircle, Loader2, Unplug, Info
+  User, Bell, Key, Shield, Globe, Save, Camera, Check, AlertCircle, Loader2, Unplug, Info,
+  Eye, EyeOff, ChevronDown, ChevronUp, Trash2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useSocialConnections } from "@/hooks/useSocialConnections";
+import { useApiCredentials, PLATFORM_CREDENTIAL_FIELDS } from "@/hooks/useApiCredentials";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -19,22 +21,23 @@ const platformConfigs = [
   { platform: 'facebook', name: 'Facebook', icon: '📘', oauthSupported: true },
   { platform: 'instagram', name: 'Instagram', icon: '📸', oauthSupported: true },
   { platform: 'twitter', name: 'X (Twitter)', icon: '🐦', oauthSupported: true },
-  { platform: 'linkedin', name: 'LinkedIn', icon: '💼', oauthSupported: true, needsSecret: 'LINKEDIN_CLIENT_ID' },
+  { platform: 'linkedin', name: 'LinkedIn', icon: '💼', oauthSupported: true },
   { platform: 'youtube', name: 'YouTube', icon: '▶️', oauthSupported: true },
-  { platform: 'tiktok', name: 'TikTok', icon: '🎵', oauthSupported: true, needsSecret: 'TIKTOK_CLIENT_KEY' },
+  { platform: 'tiktok', name: 'TikTok', icon: '🎵', oauthSupported: true },
   { platform: 'whatsapp', name: 'WhatsApp Business', icon: '💬', oauthSupported: true },
-  { platform: 'telegram', name: 'Telegram (Bot Token)', icon: '✈️', oauthSupported: false, note: 'Usa Bot Token' },
-  { platform: 'pinterest', name: 'Pinterest', icon: '📌', oauthSupported: true, needsSecret: 'PINTEREST_APP_ID' },
-  { platform: 'snapchat', name: 'Snapchat', icon: '👻', oauthSupported: false, note: 'Requer Snap Kit' },
+  { platform: 'telegram', name: 'Telegram', icon: '✈️', oauthSupported: false },
+  { platform: 'pinterest', name: 'Pinterest', icon: '📌', oauthSupported: true },
+  { platform: 'snapchat', name: 'Snapchat', icon: '👻', oauthSupported: true },
   { platform: 'threads', name: 'Threads', icon: '🧵', oauthSupported: true },
   { platform: 'google', name: 'Google API', icon: '🔍', oauthSupported: true },
-  { platform: 'site', name: 'Website', icon: '🌐', oauthSupported: false, note: 'Sem conexão necessária' },
+  { platform: 'site', name: 'Website', icon: '🌐', oauthSupported: false },
 ];
 
 export const SettingsView = () => {
   const { user, profile, updateProfile } = useAuth();
   const { toast } = useToast();
   const { connections, loading: connectionsLoading, initiateOAuth, disconnect } = useSocialConnections();
+  const { credentials, loading: credsLoading, saving, saveCredentials, deleteCredentials, hasCredentials } = useApiCredentials();
   
   const [profileData, setProfileData] = useState({
     name: profile?.name || user?.email?.split('@')[0] || "",
@@ -50,9 +53,9 @@ export const SettingsView = () => {
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Telegram bot token input
-  const [telegramToken, setTelegramToken] = useState("");
-  const [savingTelegram, setSavingTelegram] = useState(false);
+  const [expandedPlatform, setExpandedPlatform] = useState<string | null>(null);
+  const [formValues, setFormValues] = useState<Record<string, Record<string, string>>>({});
+  const [visibleFields, setVisibleFields] = useState<Record<string, boolean>>({});
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -95,33 +98,54 @@ export const SettingsView = () => {
     setConnectingPlatform(null);
   };
 
-  const handleSaveTelegram = async () => {
-    if (!user || !telegramToken.trim()) return;
-    setSavingTelegram(true);
-    try {
-      // Validate bot token
-      const res = await fetch(`https://api.telegram.org/bot${telegramToken.trim()}/getMe`);
-      const data = await res.json();
-      if (!data.ok) throw new Error("Token inválido");
-
-      const { error } = await supabase.from("social_connections").upsert({
-        user_id: user.id,
-        platform: "telegram",
-        access_token: telegramToken.trim(),
-        platform_user_id: String(data.result.id),
-        page_name: data.result.username || data.result.first_name,
-        is_connected: true,
-        updated_at: new Date().toISOString(),
-      } as any, { onConflict: "user_id,platform" });
-
-      if (error) throw error;
-      toast({ title: "Telegram conectado!", description: `Bot: @${data.result.username}` });
-      setTelegramToken("");
-    } catch (error: any) {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
-    } finally {
-      setSavingTelegram(false);
+  const toggleExpand = (platform: string) => {
+    if (expandedPlatform === platform) {
+      setExpandedPlatform(null);
+    } else {
+      setExpandedPlatform(platform);
+      // Initialize form with saved values
+      if (!formValues[platform]) {
+        setFormValues(prev => ({
+          ...prev,
+          [platform]: credentials[platform] || {}
+        }));
+      }
     }
+  };
+
+  const updateFormField = (platform: string, key: string, value: string) => {
+    setFormValues(prev => ({
+      ...prev,
+      [platform]: { ...(prev[platform] || {}), [key]: value }
+    }));
+  };
+
+  const handleSaveCreds = async (platform: string) => {
+    const vals = formValues[platform] || {};
+    const success = await saveCredentials(platform, vals);
+    if (success) {
+      setFormValues(prev => ({ ...prev, [platform]: vals }));
+    }
+  };
+
+  const handleDeleteCreds = async (platform: string) => {
+    const success = await deleteCredentials(platform);
+    if (success) {
+      setFormValues(prev => {
+        const next = { ...prev };
+        delete next[platform];
+        return next;
+      });
+    }
+  };
+
+  const toggleFieldVisibility = (fieldKey: string) => {
+    setVisibleFields(prev => ({ ...prev, [fieldKey]: !prev[fieldKey] }));
+  };
+
+  const maskValue = (value: string) => {
+    if (!value || value.length <= 6) return "••••••";
+    return value.slice(0, 3) + "••••••" + value.slice(-3);
   };
 
   return (
@@ -229,64 +253,180 @@ export const SettingsView = () => {
           </motion.div>
         </TabsContent>
 
-        {/* API Tab — Expanded with all platforms */}
+        {/* API Tab — Expandable CRUD cards */}
         <TabsContent value="api">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card rounded-2xl border border-border p-6">
             <div className="flex items-start justify-between mb-6">
               <div>
                 <h3 className="font-display font-bold text-lg">Integrações de API</h3>
-                <p className="text-sm text-muted-foreground mt-1">Conecte suas contas para publicação automática</p>
+                <p className="text-sm text-muted-foreground mt-1">Configure credenciais e conecte suas contas</p>
               </div>
-              {connectionsLoading && <Loader2 className="w-5 h-5 animate-spin text-primary" />}
+              {(connectionsLoading || credsLoading) && <Loader2 className="w-5 h-5 animate-spin text-primary" />}
             </div>
             
             <div className="space-y-3">
               {platformConfigs.map((config) => {
                 const conn = connections.find(c => c.platform === config.platform && c.is_connected);
                 const isConnecting = connectingPlatform === config.platform;
+                const isExpanded = expandedPlatform === config.platform;
+                const hasCreds = hasCredentials(config.platform);
+                const fields = PLATFORM_CREDENTIAL_FIELDS[config.platform] || [];
+                const isSaving = saving === config.platform;
+                const currentValues = formValues[config.platform] || credentials[config.platform] || {};
                 
                 return (
-                  <div key={config.platform} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border">
-                    <div className="flex items-center gap-4">
-                      <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center text-lg", conn ? "bg-green-500/10" : "bg-muted")}>
-                        {config.icon}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium">{config.name}</p>
-                          {!config.oauthSupported && config.note && (
-                            <Badge variant="outline" className="text-[10px]">{config.note}</Badge>
-                          )}
-                          {config.needsSecret && !conn && (
-                            <Badge variant="outline" className="text-[10px] text-yellow-600">Requer credenciais</Badge>
-                          )}
+                  <div key={config.platform} className="rounded-xl border border-border overflow-hidden transition-all">
+                    {/* Header row */}
+                    <button
+                      onClick={() => toggleExpand(config.platform)}
+                      className="w-full flex items-center justify-between p-4 bg-muted/30 hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={cn(
+                          "w-10 h-10 rounded-lg flex items-center justify-center text-lg",
+                          conn ? "bg-green-500/10" : hasCreds ? "bg-yellow-500/10" : "bg-muted"
+                        )}>
+                          {config.icon}
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {conn ? `Conectado${conn.page_name ? ` • ${conn.page_name}` : ''}` : "Não conectado"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      {conn && (
-                        <Button variant="ghost" size="sm" onClick={() => disconnect(config.platform)}>
-                          <Unplug className="w-4 h-4 mr-1" /> Desconectar
-                        </Button>
-                      )}
-                      {config.oauthSupported && (
-                        <Button variant={conn ? "outline" : "default"} size="sm" onClick={() => handleConnectApi(config.platform)} disabled={isConnecting}
-                          className={conn ? "" : "bg-gradient-to-r from-primary to-accent"}>
-                          {isConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : conn ? <><Check className="w-4 h-4 mr-2" />Reconectar</> : "Conectar"}
-                        </Button>
-                      )}
-                      {config.platform === "telegram" && !conn && (
-                        <div className="flex gap-2 items-center">
-                          <Input value={telegramToken} onChange={e => setTelegramToken(e.target.value)} placeholder="Bot Token" className="w-40 h-9 text-xs" />
-                          <Button size="sm" onClick={handleSaveTelegram} disabled={savingTelegram || !telegramToken.trim()}>
-                            {savingTelegram ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
-                          </Button>
+                        <div className="text-left">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{config.name}</p>
+                            {conn && (
+                              <Badge variant="default" className="text-[10px] bg-green-600 hover:bg-green-600">Conectado</Badge>
+                            )}
+                            {hasCreds && !conn && (
+                              <Badge variant="outline" className="text-[10px] text-yellow-600 border-yellow-600/30">Credenciais salvas</Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {conn ? `Conectado${conn.page_name ? ` • ${conn.page_name}` : ''}` : 
+                             hasCreds ? "Credenciais configuradas — pronto para conectar" : 
+                             "Clique para configurar credenciais"}
+                          </p>
                         </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                      </div>
+                    </button>
+
+                    {/* Expanded panel */}
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="p-4 border-t border-border bg-background/50 space-y-4">
+                            {/* Credential fields */}
+                            {fields.length > 0 && (
+                              <div className="space-y-3">
+                                <p className="text-sm font-medium text-muted-foreground">Credenciais da API</p>
+                                {fields.map((field) => {
+                                  const fieldId = `${config.platform}-${field.key}`;
+                                  const isVisible = visibleFields[fieldId] || false;
+                                  const savedValue = credentials[config.platform]?.[field.key];
+                                  const formValue = currentValues[field.key] || "";
+                                  
+                                  return (
+                                    <div key={field.key} className="space-y-1">
+                                      <label className="text-sm font-medium">{field.label}</label>
+                                      <div className="relative">
+                                        <Input
+                                          type={field.masked && !isVisible ? "password" : "text"}
+                                          value={formValue}
+                                          onChange={(e) => updateFormField(config.platform, field.key, e.target.value)}
+                                          placeholder={savedValue ? maskValue(savedValue) : `Insira ${field.label}`}
+                                          className="bg-muted/50 pr-10"
+                                        />
+                                        {field.masked && (
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleFieldVisibility(fieldId)}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                          >
+                                            {isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Action buttons */}
+                            <div className="flex items-center gap-2 pt-2">
+                              <Button
+                                size="sm"
+                                onClick={() => handleSaveCreds(config.platform)}
+                                disabled={isSaving}
+                                className="bg-gradient-to-r from-primary to-accent"
+                              >
+                                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
+                                {hasCreds ? "Atualizar" : "Salvar Credenciais"}
+                              </Button>
+
+                              {hasCreds && (
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => handleDeleteCreds(config.platform)}
+                                  disabled={isSaving}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-1" />
+                                  Remover
+                                </Button>
+                              )}
+
+                              {config.oauthSupported && hasCreds && (
+                                <Button
+                                  size="sm"
+                                  variant={conn ? "outline" : "secondary"}
+                                  onClick={() => handleConnectApi(config.platform)}
+                                  disabled={isConnecting}
+                                >
+                                  {isConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : 
+                                   conn ? <><Unplug className="w-4 h-4 mr-1" />Desconectar</> : 
+                                   <><Check className="w-4 h-4 mr-1" />Conectar</>}
+                                </Button>
+                              )}
+
+                              {conn && (
+                                <Button variant="ghost" size="sm" onClick={() => disconnect(config.platform)}>
+                                  <Unplug className="w-4 h-4 mr-1" /> Desconectar
+                                </Button>
+                              )}
+                            </div>
+
+                            {/* Info note */}
+                            {config.platform === 'telegram' && (
+                              <p className="text-xs text-muted-foreground">
+                                Telegram usa Bot Token em vez de OAuth. Crie um bot via @BotFather e cole o token aqui.
+                              </p>
+                            )}
+                            {(config.platform === 'instagram' || config.platform === 'threads' || config.platform === 'whatsapp') && (
+                              <p className="text-xs text-muted-foreground">
+                                Usa as mesmas credenciais do Meta (Facebook) App. Configure o App ID e Secret do seu Meta App.
+                              </p>
+                            )}
+                            {(config.platform === 'youtube') && (
+                              <p className="text-xs text-muted-foreground">
+                                Usa credenciais do Google Cloud Console. Habilite a YouTube Data API v3 no seu projeto.
+                              </p>
+                            )}
+                            {config.platform === 'site' && (
+                              <p className="text-xs text-muted-foreground">
+                                Informe a URL do seu site para integração direta (RSS, embed, etc).
+                              </p>
+                            )}
+                          </div>
+                        </motion.div>
                       )}
-                    </div>
+                    </AnimatePresence>
                   </div>
                 );
               })}
@@ -295,7 +435,7 @@ export const SettingsView = () => {
             <div className="mt-6 p-4 bg-muted/30 rounded-xl border border-dashed border-border flex items-start gap-3">
               <Info className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
               <p className="text-sm text-muted-foreground">
-                Para LinkedIn, TikTok e Pinterest, configure as credenciais (Client ID/Secret) nos secrets do projeto antes de conectar. WhatsApp usa Meta Business API (mesmo APP_ID do Facebook).
+                Insira as credenciais de cada plataforma e clique em "Salvar". Após salvar, o botão "Conectar" ficará disponível para iniciar a autenticação OAuth.
               </p>
             </div>
           </motion.div>
@@ -312,7 +452,7 @@ export const SettingsView = () => {
               </div>
               <div className="p-4 bg-muted/30 rounded-xl border border-border">
                 <h4 className="font-medium mb-1">Sessões ativas</h4>
-                <p className="text-sm text-muted-foreground">Sua sessão atual está ativa desde {user?.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleDateString('pt-BR') : 'hoje'}.</p>
+                <p className="text-sm text-muted-foreground">Você está logado neste dispositivo.</p>
               </div>
             </div>
           </motion.div>

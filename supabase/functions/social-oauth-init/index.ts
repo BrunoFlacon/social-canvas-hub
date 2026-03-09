@@ -35,6 +35,21 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // Fetch user-provided credentials from api_credentials table
+    const { data: userCreds } = await supabase
+      .from("api_credentials")
+      .select("credentials")
+      .eq("user_id", user.id)
+      .eq("platform", platform)
+      .maybeSingle();
+
+    const creds = userCreds?.credentials as Record<string, string> | null;
+
+    // Helper to get credential: user-provided first, then env secret fallback
+    const getCredential = (userKey: string, envKey: string): string | null => {
+      return creds?.[userKey] || Deno.env.get(envKey) || null;
+    };
+
     // Generate cryptographic state
     const stateBytes = new Uint8Array(32);
     crypto.getRandomValues(stateBytes);
@@ -47,8 +62,8 @@ serve(async (req) => {
     switch (platform) {
       case "facebook":
       case "instagram": {
-        const metaAppId = Deno.env.get("META_APP_ID");
-        if (!metaAppId) return new Response(JSON.stringify({ error: "META_APP_ID not configured." }),
+        const metaAppId = getCredential("app_id", "META_APP_ID");
+        if (!metaAppId) return new Response(JSON.stringify({ error: "App ID não configurado. Adicione nas configurações de API." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         const scopes = platform === "instagram"
           ? "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement"
@@ -57,16 +72,16 @@ serve(async (req) => {
         break;
       }
       case "threads": {
-        const metaAppId = Deno.env.get("META_APP_ID");
-        if (!metaAppId) return new Response(JSON.stringify({ error: "META_APP_ID not configured." }),
+        const metaAppId = getCredential("app_id", "META_APP_ID");
+        if (!metaAppId) return new Response(JSON.stringify({ error: "App ID não configurado. Adicione nas configurações de API." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         const scopes = "threads_basic,threads_content_publish,threads_manage_insights";
         authUrl = `https://www.threads.net/oauth/authorize?client_id=${metaAppId}&redirect_uri=${encodeURIComponent(redirect_uri)}&state=${state}&scope=${scopes}&response_type=code`;
         break;
       }
       case "whatsapp": {
-        const metaAppId = Deno.env.get("META_APP_ID");
-        if (!metaAppId) return new Response(JSON.stringify({ error: "META_APP_ID not configured." }),
+        const metaAppId = getCredential("app_id", "META_APP_ID");
+        if (!metaAppId) return new Response(JSON.stringify({ error: "App ID não configurado. Adicione nas configurações de API." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         const scopes = "whatsapp_business_management,whatsapp_business_messaging,business_management";
         authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${metaAppId}&redirect_uri=${encodeURIComponent(redirect_uri)}&state=${state}&scope=${scopes}&response_type=code`;
@@ -74,8 +89,8 @@ serve(async (req) => {
       }
       case "google":
       case "youtube": {
-        const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID");
-        if (!googleClientId) return new Response(JSON.stringify({ error: "GOOGLE_CLIENT_ID not configured." }),
+        const googleClientId = getCredential("client_id", "GOOGLE_CLIENT_ID");
+        if (!googleClientId) return new Response(JSON.stringify({ error: "Client ID não configurado. Adicione nas configurações de API." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         const scopes = platform === "youtube"
           ? "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube"
@@ -84,47 +99,47 @@ serve(async (req) => {
         break;
       }
       case "twitter": {
-        const twitterKey = Deno.env.get("TWITTER_CONSUMER_KEY");
-        if (!twitterKey) return new Response(JSON.stringify({ error: "TWITTER_CONSUMER_KEY not configured." }),
+        const twitterKey = getCredential("consumer_key", "TWITTER_CONSUMER_KEY");
+        if (!twitterKey) return new Response(JSON.stringify({ error: "Consumer Key não configurado. Adicione nas configurações de API." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         authUrl = `https://twitter.com/i/oauth2/authorize?response_type=code&client_id=${twitterKey}&redirect_uri=${encodeURIComponent(redirect_uri)}&scope=tweet.read%20tweet.write%20users.read%20offline.access&state=${state}&code_challenge=challenge&code_challenge_method=plain`;
         break;
       }
       case "linkedin": {
-        const linkedinId = Deno.env.get("LINKEDIN_CLIENT_ID");
-        if (!linkedinId) return new Response(JSON.stringify({ error: "LINKEDIN_CLIENT_ID not configured. Add it in project secrets." }),
+        const linkedinId = getCredential("client_id", "LINKEDIN_CLIENT_ID");
+        if (!linkedinId) return new Response(JSON.stringify({ error: "Client ID não configurado. Adicione nas configurações de API." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         const scopes = "openid profile email w_member_social";
         authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${linkedinId}&redirect_uri=${encodeURIComponent(redirect_uri)}&state=${state}&scope=${encodeURIComponent(scopes)}`;
         break;
       }
       case "tiktok": {
-        const tiktokKey = Deno.env.get("TIKTOK_CLIENT_KEY");
-        if (!tiktokKey) return new Response(JSON.stringify({ error: "TIKTOK_CLIENT_KEY not configured. Add it in project secrets." }),
+        const tiktokKey = getCredential("client_key", "TIKTOK_CLIENT_KEY");
+        if (!tiktokKey) return new Response(JSON.stringify({ error: "Client Key não configurado. Adicione nas configurações de API." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         const scopes = "user.info.basic,video.publish,video.upload";
         authUrl = `https://www.tiktok.com/v2/auth/authorize/?client_key=${tiktokKey}&redirect_uri=${encodeURIComponent(redirect_uri)}&state=${state}&scope=${scopes}&response_type=code`;
         break;
       }
       case "pinterest": {
-        const pinterestId = Deno.env.get("PINTEREST_APP_ID");
-        if (!pinterestId) return new Response(JSON.stringify({ error: "PINTEREST_APP_ID not configured. Add it in project secrets." }),
+        const pinterestId = getCredential("app_id", "PINTEREST_APP_ID");
+        if (!pinterestId) return new Response(JSON.stringify({ error: "App ID não configurado. Adicione nas configurações de API." }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         const scopes = "boards:read,pins:read,pins:write,user_accounts:read";
         authUrl = `https://www.pinterest.com/oauth/?client_id=${pinterestId}&redirect_uri=${encodeURIComponent(redirect_uri)}&state=${state}&scope=${scopes}&response_type=code`;
         break;
       }
-      case "telegram": {
-        // Telegram uses Bot Token, not OAuth. Return instruction.
-        return new Response(JSON.stringify({ 
-          error: "Telegram usa Bot Token. Configure o TELEGRAM_BOT_TOKEN nos secrets do projeto e adicione o bot ao seu grupo/canal.",
-          requiresToken: true 
-        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
       case "snapchat": {
+        const snapId = getCredential("client_id", "SNAPCHAT_CLIENT_ID");
+        if (!snapId) return new Response(JSON.stringify({ error: "Client ID não configurado. Adicione nas configurações de API." }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        authUrl = `https://accounts.snapchat.com/login/oauth2/authorize?client_id=${snapId}&redirect_uri=${encodeURIComponent(redirect_uri)}&state=${state}&response_type=code&scope=snapchat-marketing-api`;
+        break;
+      }
+      case "telegram": {
         return new Response(JSON.stringify({ 
-          error: "Snapchat requer credenciais Snap Kit. Configure SNAPCHAT_CLIENT_ID nos secrets do projeto.",
-          requiresSetup: true 
+          error: "Telegram usa Bot Token. Configure o token nas credenciais de API e salve.",
+          requiresToken: true 
         }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       default:
