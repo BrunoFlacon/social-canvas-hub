@@ -166,26 +166,53 @@ export const MessagingView = () => {
     ? messagingPlatformConfigs.find(p => p.id === formPlatform)?.types || []
     : [];
 
+  // Editing channel state
+  const [editingChannel, setEditingChannel] = useState<MessagingChannel | null>(null);
+
+  const handleEditChannel = (ch: MessagingChannel) => {
+    setEditingChannel(ch);
+    setFormPlatform(messagingPlatformConfigs.find(p => p.id === ch.platform) ? ch.platform : "custom");
+    setFormCustomPlatform(messagingPlatformConfigs.find(p => p.id === ch.platform) ? "" : ch.platform);
+    setFormChannelName(ch.channel_name);
+    setFormChannelId(ch.channel_id || "");
+    setFormChannelType(ch.channel_type);
+    setFormMembersCount(ch.members_count ? String(ch.members_count) : "");
+    setShowAddDialog(true);
+  };
+
   // Add or update channel
-  const handleAddChannel = async () => {
+  const handleSaveChannel = async () => {
     if (!user || !formPlatform || !formChannelName.trim()) return;
     setSubmitting(true);
     const platformName = formPlatform === "custom" ? formCustomPlatform.trim() || "custom" : formPlatform;
-    const { error } = await supabase.from("messaging_channels").insert({
-      user_id: user.id,
+    const channelData = {
       platform: platformName,
       channel_name: formChannelName.trim(),
       channel_id: formChannelId.trim() || null,
       channel_type: formChannelType,
       members_count: parseInt(formMembersCount) || 0,
-    } as any);
-    if (error) {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    };
+
+    if (editingChannel) {
+      const { error } = await supabase.from("messaging_channels").update(channelData as any).eq("id", editingChannel.id);
+      if (error) {
+        toast({ title: "Erro", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Canal atualizado!" });
+        addNotification({ type: "success", title: "Canal atualizado", message: `${formChannelName} foi atualizado.`, platform: platformName });
+        setShowAddDialog(false);
+        resetAddForm();
+      }
     } else {
-      toast({ title: "Canal adicionado!" });
-      addNotification({ type: "success", title: "Canal adicionado", message: `${formChannelName} foi adicionado como ${formChannelType}.`, platform: platformName });
-      setShowAddDialog(false);
-      resetAddForm();
+      const { error } = await supabase.from("messaging_channels").insert({ user_id: user.id, ...channelData } as any);
+      if (error) {
+        toast({ title: "Erro", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Canal adicionado!" });
+        addNotification({ type: "success", title: "Canal adicionado", message: `${formChannelName} foi adicionado como ${formChannelType}.`, platform: platformName });
+        setShowAddDialog(false);
+        resetAddForm();
+      }
     }
     setSubmitting(false);
   };
