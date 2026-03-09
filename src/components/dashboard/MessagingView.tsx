@@ -166,26 +166,53 @@ export const MessagingView = () => {
     ? messagingPlatformConfigs.find(p => p.id === formPlatform)?.types || []
     : [];
 
+  // Editing channel state
+  const [editingChannel, setEditingChannel] = useState<MessagingChannel | null>(null);
+
+  const handleEditChannel = (ch: MessagingChannel) => {
+    setEditingChannel(ch);
+    setFormPlatform(messagingPlatformConfigs.find(p => p.id === ch.platform) ? ch.platform : "custom");
+    setFormCustomPlatform(messagingPlatformConfigs.find(p => p.id === ch.platform) ? "" : ch.platform);
+    setFormChannelName(ch.channel_name);
+    setFormChannelId(ch.channel_id || "");
+    setFormChannelType(ch.channel_type);
+    setFormMembersCount(ch.members_count ? String(ch.members_count) : "");
+    setShowAddDialog(true);
+  };
+
   // Add or update channel
-  const handleAddChannel = async () => {
+  const handleSaveChannel = async () => {
     if (!user || !formPlatform || !formChannelName.trim()) return;
     setSubmitting(true);
     const platformName = formPlatform === "custom" ? formCustomPlatform.trim() || "custom" : formPlatform;
-    const { error } = await supabase.from("messaging_channels").insert({
-      user_id: user.id,
+    const channelData = {
       platform: platformName,
       channel_name: formChannelName.trim(),
       channel_id: formChannelId.trim() || null,
       channel_type: formChannelType,
       members_count: parseInt(formMembersCount) || 0,
-    } as any);
-    if (error) {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    };
+
+    if (editingChannel) {
+      const { error } = await supabase.from("messaging_channels").update(channelData as any).eq("id", editingChannel.id);
+      if (error) {
+        toast({ title: "Erro", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Canal atualizado!" });
+        addNotification({ type: "success", title: "Canal atualizado", message: `${formChannelName} foi atualizado.`, platform: platformName });
+        setShowAddDialog(false);
+        resetAddForm();
+      }
     } else {
-      toast({ title: "Canal adicionado!" });
-      addNotification({ type: "success", title: "Canal adicionado", message: `${formChannelName} foi adicionado como ${formChannelType}.`, platform: platformName });
-      setShowAddDialog(false);
-      resetAddForm();
+      const { error } = await supabase.from("messaging_channels").insert({ user_id: user.id, ...channelData } as any);
+      if (error) {
+        toast({ title: "Erro", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: "Canal adicionado!" });
+        addNotification({ type: "success", title: "Canal adicionado", message: `${formChannelName} foi adicionado como ${formChannelType}.`, platform: platformName });
+        setShowAddDialog(false);
+        resetAddForm();
+      }
     }
     setSubmitting(false);
   };
@@ -196,7 +223,7 @@ export const MessagingView = () => {
   };
 
   const resetAddForm = () => {
-    setFormPlatform(""); setFormCustomPlatform(""); setFormChannelName(""); setFormChannelId(""); setFormChannelType("group"); setFormMembersCount("");
+    setFormPlatform(""); setFormCustomPlatform(""); setFormChannelName(""); setFormChannelId(""); setFormChannelType("group"); setFormMembersCount(""); setEditingChannel(null);
   };
 
   const toggleComposeTarget = (id: string) => {
@@ -466,10 +493,16 @@ export const MessagingView = () => {
                                   <p className="text-xs text-muted-foreground">{getTypeLabel(ch.channel_type)}</p>
                                 </div>
                               </div>
-                              <button onClick={() => handleDelete(ch.id)}
-                                className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <div className="flex gap-1">
+                                <button onClick={() => handleEditChannel(ch)}
+                                  className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-accent transition-all">
+                                  <Edit className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => handleDelete(ch.id)}
+                                  className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                             <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
                               {ch.members_count > 0 && <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {ch.members_count} membros</span>}
@@ -505,9 +538,15 @@ export const MessagingView = () => {
                                   <p className="text-xs text-muted-foreground">{getTypeLabel(ch.channel_type)}</p>
                                 </div>
                               </div>
-                              <button onClick={() => handleDelete(ch.id)} className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <div className="flex gap-1">
+                                <button onClick={() => handleEditChannel(ch)}
+                                  className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-accent transition-all">
+                                  <Edit className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => handleDelete(ch.id)} className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                           </motion.div>
                         );
@@ -770,11 +809,11 @@ export const MessagingView = () => {
         </TabsContent>
       </Tabs>
 
-      {/* Add Channel Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      {/* Add/Edit Channel Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={(open) => { if (!open) { setShowAddDialog(false); resetAddForm(); } else { setShowAddDialog(true); } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Adicionar Canal</DialogTitle>
+            <DialogTitle>{editingChannel ? "Editar Canal" : "Adicionar Canal"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -824,9 +863,9 @@ export const MessagingView = () => {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddDialog(false)}>Cancelar</Button>
-            <Button onClick={handleAddChannel} disabled={submitting || !formPlatform || !formChannelName.trim()}>
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Adicionar"}
+            <Button variant="outline" onClick={() => { setShowAddDialog(false); resetAddForm(); }}>Cancelar</Button>
+            <Button onClick={handleSaveChannel} disabled={submitting || !formPlatform || !formChannelName.trim()}>
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : editingChannel ? "Salvar" : "Adicionar"}
             </Button>
           </DialogFooter>
         </DialogContent>
