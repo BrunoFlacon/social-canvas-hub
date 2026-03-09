@@ -1,86 +1,65 @@
-# Plano: Fluxo de Aprovacao Editorial + Indicadores Visuais no Calendario
+# Plan: Fix OAuth, RLS, Callback Credentials & Data Display
 
-## O que sera feito
+continue e termine  o andamento dos planos de trabalhos anteriores e inicie e termine de executar este atual plano de trabalho
 
-continue a geração da instrução anterior e implemente o plano a seguir
+## Issues Found
 
-### 1. Novo status "pending_approval" no fluxo editorial
+### 1. RLS Policies STILL RESTRICTIVE (Critical)
 
-Adicionar um novo status ao fluxo de publicacoes para suportar o ciclo jornalistico: **Rascunho -> Aguardando Aprovacao -> Aprovado/Agendado -> Publicado**.
+ALL tables show `Permissive: No` in the database schema. The previous migration either failed or new restrictive policies were created on top. This blocks ALL data operations — credentials, posts, connections, documents, media, messages.
 
-**Migracao de banco de dados:**
+**Fix**: New migration to drop ALL existing policies and recreate them as `AS PERMISSIVE`.
 
-- Nenhuma alteracao de schema necessaria: o campo `status` da tabela `scheduled_posts` ja e do tipo `text`, entao novos valores como `pending_approval` e `rejected` podem ser usados diretamente.
+### 2. OAuth Callback Ignores User Credentials (Causes INVALID_APP_ID)
 
-**Arquivo: `src/hooks/useScheduledPosts.ts**`
+The `social-oauth-init` was updated to read from `api_credentials` table, but `social-oauth-callback` still hardcodes `Deno.env.get("META_APP_ID")` etc. When a user saves their own App ID in the UI and clicks "Conectar", the init function correctly uses their App ID to build the OAuth URL. But when Facebook redirects back, the callback uses the ENV secret (which may differ or be missing), causing `PLATFORM__INVALID_APP_ID`.
 
-- Expandir o tipo `status` para incluir `'pending_approval' | 'rejected'`
-- Adicionar funcoes `submitForApproval(postId)` e `approvePost(postId)` / `rejectPost(postId, reason)`
+**Fix**: Update `social-oauth-callback` to fetch user credentials from `api_credentials` table and use them for token exchange, falling back to env vars.
 
-### 2. Atualizar statusConfig no CalendarView
+### 3. Profile Photo & Follower Count Not Displayed
 
-**Arquivo: `src/components/dashboard/CalendarView.tsx**`
+The social connections UI only shows `page_name`. Need to store and display `profile_image_url` and fetch basic stats from connected platforms.
 
-Adicionar configs para os novos status:
+**Fix**: 
 
-- `pending_approval`: icone `Clock` com cor laranja, label "Aguardando Aprovacao"
-- `rejected`: icone `AlertCircle` com cor vermelha escura, label "Rejeitado"
+- Add `profile_image_url` column to `social_connections` table
+- Update callback functions to fetch profile image URLs from each platform's API
+- Update SettingsView to display the avatar and connection details
 
-Adicionar acoes no dropdown de cada post:
+### 4. Calendar Not Showing Posts by Date
 
-- "Enviar para aprovacao" (quando status e `draft`)
-- "Aprovar" e "Rejeitar" (quando status e `pending_approval`)
+The calendar already has post display logic. Need to verify it loads correctly once RLS is fixed.
 
-### 3. Indicadores visuais ricos nos quadradinhos do calendario
+## Implementation Steps
 
-**Arquivo: `src/components/dashboard/CalendarView.tsx**`
+### Step 1: Migration — Fix ALL RLS to PERMISSIVE + Add profile_image_url column
 
-Substituir os pontos coloridos simples por mini-icones de status nos quadradinhos dos dias:
+Single migration that:
 
-- Cada post mostrara um pequeno icone (CheckCircle2, Clock, Edit, AlertCircle, etc.) colorido dentro do quadradinho do dia
-- Agrupar por status quando houver muitos posts (ex: "2x publicado, 1x rascunho")
-- Mostrar contagem total quando houver mais de 4 posts no dia
+- Drops and recreates ALL policies as PERMISSIVE across all 12 tables
+- Adds `profile_image_url text` column to `social_connections`
 
-### 4. Painel de aprovacao no CreatePostPanel
+### Step 2: Update `social-oauth-callback` Edge Function
 
-**Arquivo: `src/components/dashboard/CreatePostPanel.tsx**`
+- At the start, fetch user's credentials from `api_credentials` table
+- Create a `getCredential(userKey, envKey)` helper (same pattern as `social-oauth-init`)
+- Pass user credentials to each `exchange*()` function instead of reading env vars directly
+- Fetch profile image URL from each platform API during token exchange
+- Store `profile_image_url` in `social_connections` upsert
 
-- Adicionar botao "Enviar para Aprovacao" ao lado de "Salvar Rascunho"
-- Quando o post estiver com status `pending_approval`, mostrar botoes "Aprovar" e "Rejeitar" (simulando o papel do editor)
-- Campo de motivo de rejeicao ao rejeitar
+### Step 3: Update SettingsView API Tab
 
-### 5. Acoes de aprovacao no dialogo de detalhes
+- Show platform profile image (avatar) next to connected platform name
+- Display `page_name` and connection status more prominently
+- Show token expiration info
 
-**Arquivo: `src/components/dashboard/CalendarView.tsx**`
+### Step 4: Redeploy both edge functions
 
-No dialogo de detalhes do post, adicionar botoes contextuais:
+- `social-oauth-init` (already updated, just redeploy)
+- `social-oauth-callback` (with new credential reading logic)
 
-- Post `draft`: "Enviar para Aprovacao"
-- Post `pending_approval`: "Aprovar" e "Rejeitar"
-- Post `rejected`: Mostrar motivo da rejeicao + "Editar e Reenviar"
+## Files Modified
 
----
-
-## Detalhes Tecnicos
-
-### Arquivos editados:
-
-- `src/hooks/useScheduledPosts.ts` - Novos status e funcoes (submitForApproval, approvePost, rejectPost)
-- `src/components/dashboard/CalendarView.tsx` - Novos status no statusConfig, icones ricos nos dias, acoes de aprovacao
-- `src/components/dashboard/CreatePostPanel.tsx` - Botao "Enviar para Aprovacao"
-
-### Fluxo editorial completo:
-
-1. Jornalista cria pauta (rascunho) no calendario
-2. Desenvolve conteudo no painel de criacao
-3. Clica "Enviar para Aprovacao"
-4. Editor ve posts com status "Aguardando Aprovacao" no calendario (icone laranja)
-5. Editor aprova (muda para "scheduled") ou rejeita (muda para "rejected" com motivo)
-6. Se rejeitado, jornalista edita e reenvia
-7. Se aprovado, pode publicar imediatamente ou aguardar agendamento
-
-### Indicadores visuais nos quadradinhos:
-
-- Cada dia mostrara ate 4 mini-icones coloridos representando os posts daquele dia
-- Se houver mais de 4 posts, mostra 3 icones + badge "+N"
-- Icones usados: CheckCircle2 (publicado/verde), Clock (agendado/azul), Edit (rascunho/amarelo), AlertCircle (falha/vermelho), Loader2 (aguardando aprovacao/laranja), X (rejeitado/vermelho escuro)
+1. **New migration**: Fix RLS + add `profile_image_url` column
+2. **Modified**: `supabase/functions/social-oauth-callback/index.ts` — read user credentials from DB
+3. **Modified**: `src/components/dashboard/SettingsView.tsx` — show profile avatar for connected platforms
