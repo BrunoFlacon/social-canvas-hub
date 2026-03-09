@@ -392,6 +392,7 @@ export type Database = {
           page_name: string | null
           platform: string
           platform_user_id: string | null
+          profile_image_url: string | null
           refresh_token: string | null
           token_expires_at: string | null
           updated_at: string
@@ -406,6 +407,7 @@ export type Database = {
           page_name?: string | null
           platform: string
           platform_user_id?: string | null
+          profile_image_url?: string | null
           refresh_token?: string | null
           token_expires_at?: string | null
           updated_at?: string
@@ -420,6 +422,7 @@ export type Database = {
           page_name?: string | null
           platform?: string
           platform_user_id?: string | null
+          profile_image_url?: string | null
           refresh_token?: string | null
           token_expires_at?: string | null
           updated_at?: string
@@ -510,6 +513,7 @@ export type Database = {
           page_name: string | null
           platform: string | null
           platform_user_id: string | null
+          profile_image_url: string | null
           token_expires_at: string | null
           updated_at: string | null
           user_id: string | null
@@ -522,6 +526,7 @@ export type Database = {
           page_name?: string | null
           platform?: string | null
           platform_user_id?: string | null
+          profile_image_url?: string | null
           token_expires_at?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -534,6 +539,7 @@ export type Database = {
           page_name?: string | null
           platform?: string | null
           platform_user_id?: string | null
+          profile_image_url?: string | null
           token_expires_at?: string | null
           updated_at?: string | null
           user_id?: string | null
