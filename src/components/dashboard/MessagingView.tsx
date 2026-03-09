@@ -223,7 +223,7 @@ export const MessagingView = () => {
   };
 
   const resetAddForm = () => {
-    setFormPlatform(""); setFormCustomPlatform(""); setFormChannelName(""); setFormChannelId(""); setFormChannelType("group"); setFormMembersCount("");
+    setFormPlatform(""); setFormCustomPlatform(""); setFormChannelName(""); setFormChannelId(""); setFormChannelType("group"); setFormMembersCount(""); setEditingChannel(null);
   };
 
   const toggleComposeTarget = (id: string) => {
