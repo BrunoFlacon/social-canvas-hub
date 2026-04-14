@@ -1,2 +1,3 @@
-2026/04/14-07:33:08.283 64c8 Creating DB C:\wamp64\www\lovableproj\social-canvas-hub\.wwebjs_auth\session-agente-ia\Default\Local Storage\leveldb since it was missing.
-2026/04/14-07:33:08.352 64c8 Reusing MANIFEST C:\wamp64\www\lovableproj\social-canvas-hub\.wwebjs_auth\session-agente-ia\Default\Local Storage\leveldb/MANIFEST-000001
+2026/04/14-08:13:09.925 14f0 Reusing MANIFEST C:\wamp64\www\lovableproj\social-canvas-hub\.wwebjs_auth\session-agente-ia\Default\Local Storage\leveldb/MANIFEST-000001
+2026/04/14-08:13:09.945 14f0 Recovering log #3
+2026/04/14-08:13:09.967 14f0 Reusing old log C:\wamp64\www\lovableproj\social-canvas-hub\.wwebjs_auth\session-agente-ia\Default\Local Storage\leveldb/000003.log 

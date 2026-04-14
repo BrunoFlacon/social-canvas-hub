@@ -1,2 +1,3 @@
-2026/04/14-07:33:08.193 6508 Creating DB C:\wamp64\www\lovableproj\social-canvas-hub\.wwebjs_auth\session-agente-ia\Default\shared_proto_db since it was missing.
-2026/04/14-07:33:08.235 6508 Reusing MANIFEST C:\wamp64\www\lovableproj\social-canvas-hub\.wwebjs_auth\session-agente-ia\Default\shared_proto_db/MANIFEST-000001
+2026/04/14-08:13:09.727 4f08 Reusing MANIFEST C:\wamp64\www\lovableproj\social-canvas-hub\.wwebjs_auth\session-agente-ia\Default\shared_proto_db/MANIFEST-000001
+2026/04/14-08:13:09.747 4f08 Recovering log #3
+2026/04/14-08:13:09.774 4f08 Reusing old log C:\wamp64\www\lovableproj\social-canvas-hub\.wwebjs_auth\session-agente-ia\Default\shared_proto_db/000003.log 
